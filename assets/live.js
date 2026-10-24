@@ -347,3 +347,5 @@
 
     connect();
 })();
+
+# Automated fix for issue #3: One slow tab holds up broadcasts for every tab on the worker
