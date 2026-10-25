@@ -104,7 +104,9 @@ final class DirectivesTest extends TestCase
         $actions = [];
         $php = Template::compile($source, [], $actions);
         $this->assertSame(['save', 'pick'], $actions);
-        $this->assertSame(1, substr_count($php, '$__action('));
+        $this->assertSame(3, substr_count($php, '$__action('));
+        $this->assertStringContainsString("\$__action('save')", $php);
+        $this->assertStringContainsString("\$__action('pick')", $php);
         $this->assertStringContainsString("\$__action('go', [\$y])", $php);
     }
 

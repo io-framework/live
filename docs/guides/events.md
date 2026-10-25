@@ -195,6 +195,7 @@ In development the error also shows in the page and in the editor ([Development 
 The browser names a method; the server decides whether it may:
 
 - **Only methods the template names.** A public method of the class that no `data-on-*` attribute names stays out of reach, even though it is public. A method named only in commented-out markup (`<!-- -->` or `{{/* */}}`) is not named.
+- **Only what a render showed.** A plain call such as `delete` is reachable only while one of the last two renders had its button: a button inside an `@if` that was false leaves its method out of reach.
 - **Only public, non-static methods.** The editor and the checks flag a `data-on-click` that names a private, static or missing method.
 - **Bound calls only by their ID.** `remove($line->product)` is reachable only through the IDs of the last two renders, with the arguments the template bound.
 

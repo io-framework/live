@@ -46,7 +46,7 @@ final class CircuitTest extends TestCase
 
     private function plugin(bool $dev = false): LivePlugin
     {
-        $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class]);
+        $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class, \Io\Live\Tests\Fixtures\Safe::class]);
         $container = new Container();
         $container->set(new Label('fine'));
         $container->set(new Room());
@@ -90,6 +90,22 @@ final class CircuitTest extends TestCase
             ['id' => 'c0', 'html' => self::html(3)],
             ['id' => 'c0', 'html' => self::html(5)],
         ], $this->sent);
+        $this->assertSame([], $this->reported);
+    }
+
+    public function testAMethodWhoseButtonAnIfLeftOutIsOutOfReach(): void
+    {
+        $circuit = $this->circuit();
+        $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-safe', 'p' => []]));
+
+        // The page never showed the wipe button: a forged call does nothing
+        $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => 'wipe', 'a' => []]));
+        $this->assertStringContainsString('<output>0</output>', end($this->sent)['html']);
+
+        // Once a render shows it, it works
+        $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => 'toggle', 'a' => []]));
+        $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => 'wipe', 'a' => []]));
+        $this->assertStringContainsString('<output>1</output>', end($this->sent)['html']);
         $this->assertSame([], $this->reported);
     }
 

@@ -437,12 +437,13 @@ final class Circuit
         if ($bound !== null) {
             // A call a render bound: its arguments first, then what the event brings
             [$method, $before] = $bound;
-        } elseif (str_contains($method, '~')) {
-            // Bound by a render that is gone: the browser has the newer one or gets it, the click was on what changed
-            return;
-        } elseif (!in_array($method, $node->template->actions, true)) {
+        } elseif (!str_contains($method, '~') && !in_array($method, $node->template->actions, true)) {
             // Only what the template wires up: a public method elsewhere in the class stays out of reach
             throw new InvalidArgumentException("'$method' is no method the template names");
+        } else {
+            // Not in the last two renders: a button an @if left out, or one from a render that is gone (the browser
+            // has the newer one or gets it, the click was on what changed)
+            return;
         }
         $reflection = new ReflectionMethod($node->component, $method);
         if (!$reflection->isPublic() || $reflection->isStatic()) {
@@ -674,9 +675,9 @@ final class Circuit
         $node->calls = [];
         // The same method with the same values and objects gets the same ID in every render: a list that is
         // reordered keeps its IDs, an item that is gone takes its ID along
-        $action = function (string $method, array $args) use ($node): string {
-            $id = $method . '~' . hash('xxh3', $this->identity($args));
-            $node->calls[$id] = [$method, array_values($args)];
+        $action = function (string $method, ?array $args = null) use ($node): string {
+            $id = $args === null ? $method : $method . '~' . hash('xxh3', $this->identity($args));
+            $node->calls[$id] = [$method, array_values($args ?? [])];
             return $id;
         };
         $html = $node->template->render($node->component, function (string $selector, array $inputs) use ($node, &$positions, &$placed): string {

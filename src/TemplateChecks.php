@@ -24,7 +24,7 @@ final class TemplateChecks implements Checks
      *
      * @template T of object
      * @param class-string<T> $class
-     * @param Closure(Closure(string, array<string, mixed>): string, Closure(string, list<mixed>): string): void $template
+     * @param Closure(Closure(string, array<string, mixed>): string, Closure(string, list<mixed>|null=): string): void $template
      * @param-closure-this T $template
      */
     public static function bind(string $class, Closure $template): void

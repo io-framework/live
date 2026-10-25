@@ -206,11 +206,13 @@ final class Template
 
     /**
      * @param Closure(string, array<string, mixed>): string $child Renders a child component's tag.
-     * @param (Closure(string, list<mixed>): string)|null $action Keeps a method and its arguments, returns the ID the browser calls it by.
+     * @param (Closure(string, list<mixed>|null=): string)|null $action Keeps a method and its arguments (none for a plain call), returns the ID the browser calls it by.
      */
     public function render(object $component, Closure $child, ?Closure $action = null): string
     {
-        $action ??= static fn (string $method): never => throw new LogicException("data-on-*=\"$method(...)\" needs a circuit to render in");
+        $action ??= static fn (string $method, ?array $args = null): string => $args === null
+            ? $method
+            : throw new LogicException("data-on-*=\"$method(...)\" needs a circuit to render in");
         $level = ob_get_level();
         ob_start();
         try {
@@ -300,8 +302,9 @@ final class Template
 
     /**
      * `data-on-click="remove($item)"` becomes `data-on-click="<?= $__action('remove', [$item]) ?>"`, and
-     * `data-on-click="save"` names an action, in the HTML only. Markup in a comment does neither: a button that
-     * was commented out leaves its method out of reach and its arguments unevaluated.
+     * `data-on-click="save"` becomes `data-on-click="<?= $__action('save') ?>"`: a render records every call it
+     * shows, and a button an `@if` left out leaves its method out of reach. Markup in a comment does neither: a
+     * button that was commented out leaves its method out of reach and its arguments unevaluated.
      *
      * @param list<string>|null $actions
      * @param-out list<string> $actions
@@ -338,7 +341,8 @@ final class Template
                         $actions[] = $value;
                     }
                 }
-                $code .= preg_replace('/\bdata-on-([a-z]+)="([A-Za-z_]\w*)\(([^"]*)\)"/', 'data-on-$1="<?= $__action(\'$2\', [$3]) ?>"', $part);
+                $part = (string) preg_replace('/\bdata-on-([a-z]+)="([A-Za-z_]\w*)\(([^"]*)\)"/', 'data-on-$1="<?= $__action(\'$2\', [$3]) ?>"', $part);
+                $code .= preg_replace('/\bdata-on-([a-z]+)="([A-Za-z_]\w*)"/', 'data-on-$1="<?= $__action(\'$2\') ?>"', $part);
             }
         }
         return $code;

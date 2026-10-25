@@ -14,7 +14,7 @@ A live component runs on the server with the app's full access to its services, 
 
 **Only inputs can be set from outside.** A page, a template or the browser can set only public properties marked `#[Input]`. Any other name is refused.
 
-**Only methods the template names can be called.** The browser can call a public, non-static method only if the component's template names it in a `data-on-*` attribute. Every other public method stays out of reach, and so does one named only in commented-out markup (`<!-- -->`, `{{/* */}}`).
+**Only methods the template names can be called.** The browser can call a public, non-static method only if the component's template names it in a `data-on-*` attribute. Every other public method stays out of reach, and so does one named only in commented-out markup (`<!-- -->`, `{{/* */}}`). A method is reachable only while one of the component's last two renders showed it: a button inside `@if ($this->mayDelete())` keeps `delete()` out of reach for anyone who never saw it.
 
 **Bound arguments never leave the server.** A call such as `data-on-click="remove($line->product)"` on the bakery's cart page reaches the browser only as an ID. The browser can send that ID back, but it cannot change the arguments, and an ID is only valid for the last two renders of that component. A click on an item that is gone since does nothing.
 
