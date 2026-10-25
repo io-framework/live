@@ -52,9 +52,7 @@ A reload of the page is always a new circuit. The token lives only in the page's
 The token is a bearer secret for the circuit: whoever has it gets the components while they are parked. Two rules limit what that means:
 
 - **It never leaves the page's memory.** It is not in a URL, a cookie or browser storage.
-- **It works only for the same user.** A parked circuit is handed back only if the new connection's `$request->jwt` names the same `sub` as the connection it was opened with. After a logout, after a login as someone else, or for a connection without the JWT, the parked components are closed and new ones start.
-
-An app that identifies users by something other than the JWT's `sub` (a session cookie, say) does not get this check: there the token alone decides.
+- **It works only for the same user.** A parked circuit is handed back only if the new connection's `$request->jwt` names the same `sub` as the connection it was opened with. Without a JWT `sub` (anonymous visitors, a login by session cookie) the new connection must bring the same cookies instead. After a logout, after a login as someone else, or with other cookies, the parked components are closed and new ones start.
 
 ## What can be lost
 

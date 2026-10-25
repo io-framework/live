@@ -364,8 +364,8 @@ queued events are dropped. A reload is a new circuit.
 
 The token lives only in the page's memory and is a bearer secret for the circuit: whoever has it gets the
 components while they are parked, but only as the same user. A circuit resumes only if the new connection's
-`$request->jwt` names the same `sub` as the one it was opened with; after a logout or for anyone else the
-components start over. It is never in a URL, a cookie or storage.
+`$request->jwt` names the same `sub` as the one it was opened with, or without a JWT `sub` brings the same cookies;
+after a logout or for anyone else the components start over. It is never in a URL, a cookie or storage.
 
 ## Security
 

@@ -716,6 +716,17 @@ final class CircuitTest extends TestCase
         $this->assertTrue($this->circuit()->sameUser(Request::fromParts('GET', '/_live')));
     }
 
+    public function testWithoutAJwtACircuitResumesOnlyWithTheSameCookies(): void
+    {
+        $cookies = ['session' => 'a1', 'cart' => '7'];
+        $circuit = $this->circuit(Request::fromParts('GET', '/_live', cookies: $cookies));
+
+        // The same cookies in another order are the same browser
+        $this->assertTrue($circuit->sameUser(Request::fromParts('GET', '/_live', cookies: array_reverse($cookies))));
+        $this->assertFalse($circuit->sameUser(Request::fromParts('GET', '/_live', cookies: ['session' => 'b2', 'cart' => '7'])));
+        $this->assertFalse($circuit->sameUser(Request::fromParts('GET', '/_live')));
+    }
+
     /**
      * Declares the fake channels and tasks from Stubs/Tenma.php; only for tests that run in a separate process.
      */

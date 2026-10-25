@@ -270,10 +270,14 @@ final class Circuit
         }
     }
 
-    /** Whether $request belongs to the user this circuit was opened for: $request->jwt's sub, as Io keeps it. */
+    /**
+     * Whether $request belongs to the user this circuit was opened for: $request->jwt's sub, as Io keeps it. Without
+     * one (anonymous visitors, a login by session cookie) the same cookies, which the tab's #[Scoped] services were
+     * built from.
+     */
     public function sameUser(Request $request): bool
     {
-        return self::subject($this->connection->request) === self::subject($request);
+        return self::user($this->connection->request) === self::user($request);
     }
 
     /**
@@ -292,9 +296,18 @@ final class Circuit
         return true;
     }
 
-    private static function subject(Request $request): mixed
+    private static function user(Request $request): string
     {
-        return $request->jwt['sub'] ?? null;
+        $subject = $request->jwt['sub'] ?? null;
+        if ($subject !== null) {
+            return 'sub:' . json_encode($subject, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+        }
+
+        $cookies = $request->cookies;
+        ksort($cookies);
+        $json = json_encode($cookies, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+
+        return 'cookies:' . hash('sha256', $json);
     }
 
     /** @internal The tab's #[Scoped] services: Testing\Tab puts its fakes there */

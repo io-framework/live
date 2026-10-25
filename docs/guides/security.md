@@ -26,7 +26,7 @@ A live component runs on the server with the app's full access to its services, 
 
 **Guards hold on every call.** `#[Authenticated]`, `#[Role]` and `#[Permissions]` on a component class are checked when the component is created and before every action, those on a method before every call of it and before every run of its `#[Every]` timer, against the connection's request and by the rules of a route's guards ([The connection and the user](connection.md#guards-on-components-and-actions)). A timer the user may not run is skipped. A JWT that expired since the connection opened counts as signed out: calls, timers and broadcasts no longer reach the tab, and the connection is closed, so the browser connects again through the app's middlewares.
 
-**Parked components go back to the same user only.** A reconnecting browser gets its parked circuit back only if its JWT names the same `sub` ([Reconnects](reconnect.md#the-same-user-only)). The circuit's token is never in a URL, a cookie or storage.
+**Parked components go back to the same user only.** A reconnecting browser gets its parked circuit back only if its JWT names the same `sub`, or without a JWT `sub` if it brings the same cookies ([Reconnects](reconnect.md#the-same-user-only)). The circuit's token is never in a URL, a cookie or storage.
 
 ## What every component checks itself
 
