@@ -796,6 +796,44 @@ final class CircuitTest extends TestCase
         $this->assertNull($circuit->byId('c1'));
     }
 
+    public function testTimersAndBroadcastsHoldToTheGuardsAndTheLoginsExpiry(): void
+    {
+        $live = new LivePlugin([\Io\Live\Tests\Fixtures\Siren::class]);
+        $live->boot(new Container(), self::environment(), new Logger(), new LiveOptions());
+        $closed = 0;
+        $tab = function (array $jwt) use ($live, &$closed): Circuit {
+            $request = Request::fromParts('GET', '/_live');
+            $request->jwt = $jwt;
+            $this->timers = [];
+            $circuit = $this->circuit($request, $live);
+            (new \ReflectionProperty($circuit, 'close'))->setValue($circuit, function () use (&$closed): void {
+                $closed++;
+            });
+            $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-siren', 'p' => []]));
+            return $circuit;
+        };
+
+        // #[Role('admin')] on the timer: a user's tab never runs it
+        $user = $tab(['sub' => 1, 'role' => 'user']);
+        ($this->timers[0][1])();
+        $this->assertSame(0, $user->byId('c0')?->component->count);
+
+        $admin = $tab(['sub' => 2, 'role' => 'admin', 'exp' => time() + 60]);
+        ($this->timers[0][1])();
+        $this->assertSame(1, $admin->byId('c0')?->component->count);
+
+        // Signed out since: neither the timer nor a broadcast reaches the tab, the connection closes
+        $request = $admin->services()->get(\Io\Live\Connection::class)->request;
+        $request->jwt['exp'] = time() - 1;
+        $this->sent = [];
+        ($this->timers[0][1])();
+        $admin->changed(false, 'broadcast');
+        $this->assertSame(1, $admin->byId('c0')?->component->count);
+        $this->assertSame([], $this->sent);
+        $this->assertSame(2, $closed);
+        $this->assertSame([], $this->reported);
+    }
+
     public function testEveryRenderOfATabRunsWithItsConnectionsRequestValues(): void
     {
         $locale = \Io\Live\Tests\Fixtures\Greeting::locale();

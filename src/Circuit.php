@@ -166,11 +166,7 @@ final class Circuit
             }
             return;
         }
-        // A login that expired since the connection opened is none: the browser connects again, through the app's
-        // middlewares, and the circuit starts over for whoever it is then
-        if ($this->expired()) {
-            $this->live->notice('the login of a connection expired: it is closed, so that the browser connects again');
-            ($this->close)();
+        if ($this->closedIfExpired()) {
             return;
         }
         $this->started = hrtime(true);
@@ -280,11 +276,20 @@ final class Circuit
         return self::subject($this->connection->request) === self::subject($request);
     }
 
-    /** Whether the connection's JWT has expired since it was decoded: then nobody is signed in any more. */
-    private function expired(): bool
+    /**
+     * A login that expired since the connection opened is none: the connection is closed, the browser connects
+     * again through the app's middlewares, and the circuit starts over for whoever it is then. Before every
+     * call, timer and render: none of them reaches a tab whose user is signed out.
+     */
+    private function closedIfExpired(): bool
     {
         $exp = $this->connection->request->jwt['exp'] ?? null;
-        return (is_int($exp) || is_float($exp)) && $exp <= time();
+        if (!(is_int($exp) || is_float($exp)) || $exp > time()) {
+            return false;
+        }
+        $this->live->notice('the login of a connection expired: it is closed, so that the browser connects again');
+        ($this->close)();
+        return true;
     }
 
     private static function subject(Request $request): mixed
@@ -586,6 +591,15 @@ final class Circuit
         foreach ((new ReflectionObject($node->component))->getMethods() as $method) {
             foreach ($method->getAttributes(Every::class) as $attribute) {
                 $node->timers[] = ($this->every)($attribute->newInstance()->seconds, fn () => $this->within(function () use ($node, $method): void {
+                    if ($this->closedIfExpired()) {
+                        return;
+                    }
+                    // A timer the user may not run as a click is skipped: its #[Role] or #[Permissions] hold for both
+                    try {
+                        $this->live->guard($node->component::class, $method->getName(), $this->connection->request);
+                    } catch (Throwable) {
+                        return;
+                    }
                     $this->cause = '#[Every] ' . $method->getName();
                     $this->started = hrtime(true);
                     // As an action: a failure shows on the component, what changed before it still renders
@@ -616,6 +630,9 @@ final class Circuit
      */
     public function changed(bool $onlyIfChanged = true, ?string $cause = null): void
     {
+        if ($this->closedIfExpired()) {
+            return;
+        }
         // From outside an action or a timer (a broadcast, a reconnect): with the tab's own request values
         if ($cause !== null) {
             $this->within(fn () => $this->renderAll($onlyIfChanged, $cause));
