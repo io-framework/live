@@ -135,9 +135,6 @@ final class Circuit
     /**
      * Runs $work with the FiberLocal values the connection's request had, wherever it runs: in a timer or in the
      * request that sent a broadcast. The values of the code around it are set again afterwards.
-     *
-     * ponytail: a value that was not set around it stays set afterwards; FiberLocal::capture() only restores the
-     * values it found, which is enough while every request sets the same ones
      */
     private function within(Closure $work): void
     {
