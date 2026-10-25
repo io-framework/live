@@ -1,7 +1,7 @@
 <?php
 
 /**
- * A Tenma with channels, as far as Broadcast can tell: a subscription ends with the request it was made in,
+ * A Tenma with channels and timers, as far as Broadcast and parking can tell: a subscription ends with the request it was made in,
  * one made in Task::detach() lives on, and a subscription keeps its process running. FakeTenma holds what
  * the tests look at.
  */
@@ -43,6 +43,21 @@ namespace Messaging {
 }
 
 namespace Threading {
+    final class Timer
+    {
+        public bool $cancelled = false;
+
+        public static function after(float $seconds, callable $callback): self
+        {
+            return new self();
+        }
+
+        public function cancel(): void
+        {
+            $this->cancelled = true;
+        }
+    }
+
     final class Task
     {
         public static function detach(callable $work): void

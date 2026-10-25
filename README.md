@@ -355,8 +355,8 @@ moves along with its row.
 
 ## Reconnect
 
-When the connection drops, the server keeps the tab's circuit for 3 minutes (at most 100 per worker, the
-oldest goes first; one without components is not kept), with its timers paused. The browser reconnects after
+When the connection drops, the server keeps the tab's circuit for 3 minutes (at most 100 per worker and 10 per
+client, the busiest client's oldest goes first; one without components is not kept), with its timers paused. The browser reconnects after
 1, 2, 4 ... at most 30 seconds and sends the circuit's token; the server hands back the same components with
 their state, renders them once to catch up and starts the timers again. Events from the time offline are
 queued and sent afterwards. If the circuit is gone, the components start again from the page's inputs and the

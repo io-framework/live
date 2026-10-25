@@ -9,7 +9,7 @@ use Io\Container;
 use Io\Environment;
 use Io\Logger;
 use Io\Http\{Request, Response};
-use Io\Live\{Circuit, Components, LiveOptions, LivePlugin};
+use Io\Live\{Circuit, Components, LiveController, LiveOptions, LivePlugin};
 use Io\Live\Tests\Fixtures\{BasketBadge, BasketButton, Chat, Counter, Fragile, Item, ItemList, Label, Bouncer, Room, Shop, Tally, Ticker, Uploader, Visitor};
 
 final class CircuitTest extends TestCase
@@ -733,6 +733,36 @@ final class CircuitTest extends TestCase
     private static function fakeTenma(): void
     {
         require __DIR__ . '/Stubs/Tenma.php';
+    }
+
+    #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
+    public function testOneClientCannotPushOutTheParkedCircuitsOfOthers(): void
+    {
+        self::fakeTenma();
+        $park = new \ReflectionMethod(LiveController::class, 'park');
+        $parked = new \ReflectionProperty(LiveController::class, 'parked');
+        $tokens = static fn (string $client): array => array_keys(array_filter(
+            $parked->getValue(),
+            static fn (array $entry) => $entry[2] === $client,
+        ));
+
+        $park->invoke(null, 'visitor', $this->circuit(), 'ip:10.0.0.2');
+        foreach (range(1, 15) as $i) {
+            $park->invoke(null, "attack-$i", $this->circuit(), 'ip:10.0.0.66');
+        }
+        // The attacker keeps only its newest ten; the visitor's circuit stays
+        $this->assertSame(['visitor'], $tokens('ip:10.0.0.2'));
+        $this->assertSame(array_map(static fn (int $i) => "attack-$i", range(6, 15)), $tokens('ip:10.0.0.66'));
+
+        // Every place taken: the client that holds the most gives up its oldest
+        foreach (range(1, 89) as $i) {
+            $park->invoke(null, "user-$i", $this->circuit(), "sub:$i");
+        }
+        $park->invoke(null, 'late', $this->circuit(), 'sub:999');
+        $this->assertCount(100, $parked->getValue());
+        $this->assertSame(['visitor'], $tokens('ip:10.0.0.2'));
+        $this->assertNotContains('attack-6', $tokens('ip:10.0.0.66'));
+        $this->assertSame(['late'], $tokens('sub:999'));
     }
 
     #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]

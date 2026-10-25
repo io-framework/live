@@ -11,7 +11,7 @@ A tab's components and `#[Scoped]` services live in its *circuit* on the server.
 On the server:
 
 - The circuit is **parked for 3 minutes**, with its timers paused. Nothing is sent.
-- Each worker parks **at most 100** circuits; when a new one comes, the oldest parked one is closed.
+- Each worker parks **at most 100** circuits, and **at most 10 per client** (the JWT's `sub`, or else the address). A client's eleventh closes its own oldest. When all 100 are taken, the oldest circuit of the client that holds the most is closed, so no client can push out everyone else's.
 - A circuit without components (every mount failed) is not parked.
 - After 3 minutes the circuit is closed: timers stop, the components are dropped.
 
