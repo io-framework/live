@@ -18,7 +18,7 @@ In production none of this happens: the browser only learns that a component fai
 
 - **A saved template** renders at once in every open tab, and the components keep their state. Live looks for changed templates four times a second, by content, so a save without a change does nothing.
 - **A template that no longer compiles** keeps its last working version. The mistake shows in the page and in the editor until the template is saved without it.
-- **A saved PHP file** restarts the workers (`tenma --watch`). If it was a component's class, the open pages keep their components and these get their state back: the properties with plain values (numbers, strings, booleans, arrays of them), children by selector and key. A property that the new code no longer has, or whose type no longer takes the old value, starts over, and the log says so. Services, objects and closures start over too. This needs a Tenma with `Development\Watch::reloadedBy()`; without it, the pages load again.
+- **A saved PHP file** restarts the workers (`tenma --watch`). If it was a component's class, the open pages keep their components and these get their state back: the properties with plain values (numbers, strings, booleans, arrays of them), children by selector and key. A property that the new code no longer has, or whose type no longer takes the old value, starts over, and the log says so. Services, objects and closures start over too. The browser keeps that state sealed with a key in the system's temp directory, so it can neither read nor change it. This needs a Tenma with `Development\Watch::reloadedBy()`; without it, the pages load again.
 - **Any other saved file** (a service, a view, the layout) loads the open pages again.
 
 ## Checks

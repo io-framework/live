@@ -204,7 +204,8 @@ final class CircuitTest extends TestCase
         $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'app-gauge', 'p' => []]));
         $circuit->handle($this->message(['t' => 'inspect', 'id' => 'c0']));
         $this->assertSame("<b>unknown</b>\n", $this->sent[0]['html']);
-        $this->assertSame([], $this->sent[0]['state']['c0']);
+        $sealed = (new \ReflectionMethod(Circuit::class, 'unseal'))->invoke(null, $this->sent[0]['state']);
+        $this->assertSame([], $sealed['c0']);
         $this->assertSame('NAN', end($this->sent)['state']['state']['value']);
         $this->assertSame([], $this->reported);
     }
@@ -423,19 +424,50 @@ final class CircuitTest extends TestCase
         $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => 'drop', 'a' => []]));
         $withState = array_values(array_filter($this->sent, static fn (array $m) => isset($m['state'])));
         $state = $withState[count($withState) - 1]['state'];
+        // Sealed: the browser keeps it but cannot read it
+        $this->assertIsString($state);
+        $this->assertStringNotContainsString('picked', (string) base64_decode($state));
+        $opened = (new \ReflectionMethod(Circuit::class, 'unseal'))->invoke(null, $state);
         // By path: "b" is the first child now, its state is still its own
-        $this->assertSame(['c0', 'c0/test-item=b'], array_keys($state));
-        $this->assertSame(['items' => ['b'], 'picked' => 'b'], $state['c0']);
+        $this->assertSame(['c0', 'c0/test-item=b'], array_keys($opened));
+        $this->assertSame(['items' => ['b'], 'picked' => 'b'], $opened['c0']);
 
         foreach ([true, false] as $dev) {
             $this->sent = [];
             $again = $this->circuit(live: $this->plugin($dev));
-            $again->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-list', 'p' => [], 's' => $state + ['c0/test-item=x' => ['clicks' => 9]]]));
+            $again->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-list', 'p' => [], 's' => $state]));
             $html = array_values(array_filter($this->sent, static fn (array $m) => isset($m['html'])))[0]['html'];
             // In production the browser never sets state
             $this->assertStringContainsString($dev ? '>b 1</button>' : '>a 0</button>', $html);
             $this->assertStringContainsString($dev ? '<p>picked b</p>' : '<p>picked </p>', $html);
         }
+    }
+
+    public function testInDevTheBrowserCannotSetStateTheServerDidNotSeal(): void
+    {
+        $sealed = $this->sealedState();
+        $bytes = (string) base64_decode($sealed);
+        $changed = base64_encode(substr($bytes, 0, -1) . chr(ord($bytes[-1]) ^ 1));
+        $forged = ['c0' => ['items' => ['x'], 'picked' => 'x']];
+
+        foreach ([$forged, $changed] as $state) {
+            $this->sent = [];
+            $circuit = $this->circuit(live: $this->plugin(true));
+            $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-list', 'p' => [], 's' => $state]));
+            $html = array_values(array_filter($this->sent, static fn (array $m) => isset($m['html'])))[0]['html'];
+            $this->assertStringContainsString('<p>picked </p>', $html);
+        }
+    }
+
+    /** What a dev circuit sends the browser to keep, after a click changed the list */
+    private function sealedState(): string
+    {
+        $circuit = $this->circuit(live: $this->plugin(true));
+        $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-list', 'p' => []]));
+        $circuit->handle($this->message(['t' => 'call', 'id' => 'c0.1', 'm' => 'choose', 'a' => []]));
+        $withState = array_values(array_filter($this->sent, static fn (array $m) => isset($m['state'])));
+
+        return $withState[count($withState) - 1]['state'];
     }
 
     public function testAPageRefusesInputsThatCannotTravelThroughTheBrowser(): void

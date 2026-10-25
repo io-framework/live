@@ -392,12 +392,12 @@ final class Circuit
         }
     }
 
-    /** @param mixed $state In dev, after PHP reloaded: what the browser kept of the component and its children, by ID */
+    /** @param mixed $state In dev, after PHP reloaded: what the browser kept of the component and its children, sealed */
     private function mount(string $id, mixed $selector, mixed $inputs, mixed $state = null): void
     {
-        // Only in dev: the browser must never set what is not an input
-        if ($this->live->isDev() && is_array($state)) {
-            foreach ($state as $of => $properties) {
+        // Only in dev, and only what the server sealed: the browser must never set what is not an input
+        if ($this->live->isDev() && is_string($state)) {
+            foreach (self::unseal($state) as $of => $properties) {
                 if (($of === $id || str_starts_with((string) $of, "$id/")) && is_array($properties)) {
                     $this->restore[(string) $of] = $properties;
                 }
@@ -558,6 +558,57 @@ final class Circuit
         return $states;
     }
 
+    /**
+     * In dev: the state the browser keeps across a reload of PHP, sealed so that it can neither read nor change it.
+     *
+     * @param array<string, array<string, mixed>> $states
+     */
+    private static function seal(array $states): string
+    {
+        $json = json_encode($states, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+        $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+
+        return base64_encode($nonce . sodium_crypto_secretbox($json, $nonce, self::sealKey()));
+    }
+
+    /** @return array<array-key, mixed> What seal() sealed; nothing for what the browser made up or changed */
+    private static function unseal(string $sealed): array
+    {
+        $bytes = base64_decode($sealed, true);
+        if ($bytes === false || strlen($bytes) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
+            return [];
+        }
+        $nonce = substr($bytes, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+        $box = substr($bytes, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+        $json = sodium_crypto_secretbox_open($box, $nonce, self::sealKey());
+        $states = $json === false ? null : json_decode($json, true);
+
+        return is_array($states) ? $states : [];
+    }
+
+    /**
+     * The key of seal(). In a file only the user can read, because it must outlive a reload of PHP. Workers that
+     * race to create it each rename a whole key into place, and every call reads the one that won.
+     */
+    private static function sealKey(): string
+    {
+        $file = sys_get_temp_dir() . '/io-live-' . getmyuid() . '.key';
+        $key = @file_get_contents($file);
+        if (is_string($key) && strlen($key) === SODIUM_CRYPTO_SECRETBOX_KEYBYTES) {
+            return $key;
+        }
+
+        $key = random_bytes(SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
+        $partial = $file . '.' . bin2hex(random_bytes(4));
+        // Private before the key goes in
+        touch($partial);
+        chmod($partial, 0600);
+        file_put_contents($partial, $key);
+        rename($partial, $file);
+
+        return $key;
+    }
+
     /** What JSON carries as it is: NAN and INF are no JSON numbers */
     private static function plain(mixed $value): bool
     {
@@ -676,7 +727,7 @@ final class Circuit
         if (!$onlyIfChanged || $html !== $node->sent) {
             $node->sent = $html;
             // In dev the browser keeps the state, for a reload of PHP
-            $message = json_encode(['id' => $node->id, 'html' => $html] + ($this->live->isDev() ? ['state' => $this->states($node)] : []), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+            $message = json_encode(['id' => $node->id, 'html' => $html] + ($this->live->isDev() ? ['state' => self::seal($this->states($node))] : []), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
             ($this->send)($message);
         }
         $this->renders[] = [$node->id, $node->selector, round((hrtime(true) - $started) / 1e6, 2), $message === null ? null : strlen($message)];
