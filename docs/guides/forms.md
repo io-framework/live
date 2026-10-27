@@ -38,7 +38,7 @@ final class Checkout
 
     private CheckoutForm $form;
 
-    /** @var array<string, string> field => message */
+    /** @var array<string, list<string>> field => messages */
     private array $errors = [];
 
     public function __construct()
@@ -51,10 +51,10 @@ final class Checkout
         $this->form = $form;
         $this->errors = $form->errors;
         if ($this->cart->count() === 0) {
-            $this->errors['cart'] = $this->i18n->t('Your cart is empty.');
+            $this->errors['cart'][] = $this->i18n->t('Your cart is empty.');
         }
         if (!isset($this->errors['pickupDate']) && !in_array($form->pickupDate, $this->calendar->upcoming(), true)) {
-            $this->errors['pickupDate'] = $this->i18n->t('Please choose one of the pickup days.');
+            $this->errors['pickupDate'][] = $this->i18n->t('Please choose one of the pickup days.');
         }
         if ($this->errors !== []) {
             return;
@@ -62,7 +62,7 @@ final class Checkout
         try {
             $order = $this->orders->place($this->cart->quantities(), trim($form->name), trim($form->email), $form->pickupDate, $this->i18n->locale());
         } catch (OutOfStock $e) {
-            $this->errors['cart'] = $this->i18n->t('Sorry, we do not have that many of {product} any more.', ['product' => $e->product]);
+            $this->errors['cart'] = [$this->i18n->t('Sorry, we do not have that many of {product} any more.', ['product' => $e->product])];
             return;
         }
         $this->cart->clear();
@@ -77,17 +77,17 @@ The template, shortened to two of its three fields (`src/Components/Checkout.Tem
 ```html
 @if ($this->cart->count() > 0)
     <form data-on-submit="place" class="grid gap-4">
-        @if (isset($this->errors['cart']))
+        @foreach ($this->errors['cart'] ?? [] as $message)
             <p role="alert" class="rounded-lg bg-red-50 p-3 text-red-800">
-                {{ $this->errors['cart'] }}
+                {{ $message }}
             </p>
-        @endif
+        @endforeach
         <label class="grid gap-1">
             <span class="text-sm font-medium">{{ $this->i18n->t('Your name') }}</span>
             <input name="name" value="{{ $this->form->name }}" autocomplete="name" class="rounded-lg border border-stone-300 px-3 py-2">
-            @if (isset($this->errors['name']))
-                <span class="text-sm text-red-700">{{ $this->errors['name'] }}</span>
-            @endif
+            @foreach ($this->errors['name'] ?? [] as $message)
+                <span class="text-sm text-red-700">{{ $message }}</span>
+            @endforeach
         </label>
         <label class="grid gap-1">
             <span class="text-sm font-medium">{{ $this->i18n->t('Pickup day') }}</span>
@@ -97,9 +97,9 @@ The template, shortened to two of its three fields (`src/Components/Checkout.Tem
                     <option value="{{ $date }}" @if ($this->form->pickupDate === $date) selected @endif>{{ Format::day($date, $this->i18n->locale()) }}</option>
                 @endforeach
             </select>
-            @if (isset($this->errors['pickupDate']))
-                <span class="text-sm text-red-700">{{ $this->errors['pickupDate'] }}</span>
-            @endif
+            @foreach ($this->errors['pickupDate'] ?? [] as $message)
+                <span class="text-sm text-red-700">{{ $message }}</span>
+            @endforeach
         </label>
         <button class="rounded-lg bg-amber-800 px-4 py-3 font-semibold text-white hover:bg-amber-700">{{ $this->i18n->t('Reserve my order') }}</button>
     </form>
@@ -163,7 +163,7 @@ final class CheckoutForm
 }
 ```
 
-`place()` above takes its `errors` as the component's and adds the checks that need the app (an empty cart, a day that is no pickup day). The messages come in the tab's language, through the i18n plugin.
+`errors` maps each field to the messages of all its rules that failed, so the template lists them. `place()` above takes them as the component's and adds the checks that need the app (an empty cart, a day that is no pickup day); a check against the database can also be a rule of its own, `#[Check]`. The messages come in the tab's language, through the i18n plugin.
 
 Any validation code works, a DTO as above, plain PHP or a validator service injected into the component; the component decides how it shows the errors.
 
