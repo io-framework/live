@@ -3,7 +3,7 @@
 namespace Io\Live;
 
 use Closure;
-use Io\View\Checks;
+use Io\View\{Check, Checks};
 
 /**
  * The components' templates in `vendor/bin/io-check` (composer.json names it under
@@ -33,7 +33,34 @@ final class TemplateChecks implements Checks
 
     public function problems(): array
     {
-        return $this->components()->check();
+        $problems = $this->components()->check();
+        $helpers = Check::helperNames($this->root);
+        if ($helpers === null) {
+            return $problems;
+        }
+        // $this->name() without such a method is a view helper: one of the installed plugins must offer it
+        $components = $this->components();
+        $broken = array_column(array_filter($problems, static fn (array $p) => $p['severity'] === 'error'), 'file', 'file');
+        foreach ($components->sources() as [$class, $path]) {
+            $source = (string) @file_get_contents($path);
+            if (isset($broken[$path])) {
+                continue;
+            }
+            $php = Template::compile($source, $components->selectors(), class: $class);
+            preg_match_all("/\\\$__helper\\('(\\w+)'\\)/", $php, $calls, PREG_OFFSET_CAPTURE);
+            foreach ($calls[1] as [$name, $offset]) {
+                if (!in_array($name, $helpers, true)) {
+                    $close = array_values(array_filter($helpers, static fn (string $h) => levenshtein(strtolower($name), strtolower($h)) <= 2));
+                    $problems[] = [
+                        'file' => $path,
+                        'line' => substr_count($php, "\n", 0, $offset) + 1,
+                        'message' => Check::unknownHelper($name, $close),
+                        'severity' => 'error',
+                    ];
+                }
+            }
+        }
+        return $problems;
     }
 
     public function generate(string $directory): array
