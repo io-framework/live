@@ -219,4 +219,15 @@ final class EditorTest extends TestCase
             $this->problems(self::FIXTURES . '/Item.Template.php', "@code function fmt(\$x) { return \$x; } @endcode\n{{ fmt(1) }}"),
         );
     }
+
+    public function testAComponentAddedAfterTheFirstScanIsFoundLater(): void
+    {
+        $editor = $this->editor();
+        // As if the server scanned before the component existed, a while ago
+        (new \ReflectionProperty($editor, 'components'))->setValue($editor, []);
+        (new \ReflectionProperty($editor, 'scanned'))->setValue($editor, time() - 5);
+        $file = self::FIXTURES . '/Board.Template.php';
+
+        $this->assertNotSame([], $editor->tokens($file, (string) file_get_contents($file)));
+    }
 }

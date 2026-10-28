@@ -25,6 +25,9 @@ final class Editor implements Provider, Tokens, Imports
     /** @var array<string, array{class-string, string}>|null selector => class, template file */
     private ?array $components = null;
 
+    /** When the components were scanned last */
+    private int $scanned = 0;
+
     public function __construct(private readonly string $root)
     {
     }
@@ -131,6 +134,18 @@ final class Editor implements Provider, Tokens, Imports
     private function templateOf(string $file): ?string
     {
         $file = realpath($file) ?: $file;
+        $class = $this->componentOf($file);
+        // A component added since the scan (the editor's server runs for hours): look again, at most once a second
+        if ($class === null && time() > $this->scanned) {
+            $this->components = null;
+            $class = $this->componentOf($file);
+        }
+        return $class;
+    }
+
+    /** @return class-string|null */
+    private function componentOf(string $file): ?string
+    {
         foreach ($this->components() as [$class, $template]) {
             if ((realpath($template) ?: $template) === $file) {
                 return $class;
@@ -142,6 +157,10 @@ final class Editor implements Provider, Tokens, Imports
     /** @return array<string, array{class-string, string}> */
     private function components(): array
     {
-        return $this->components ??= Components::scan($this->root)->sources();
+        if ($this->components === null) {
+            $this->components = Components::scan($this->root)->sources();
+            $this->scanned = time();
+        }
+        return $this->components;
     }
 }
