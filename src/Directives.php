@@ -18,6 +18,9 @@ final class Directives extends Compiler
 
     protected const string NOUN = 'template';
 
+    /** `@include` renders a view through the app's Partials, with the page's request */
+    protected const string INCLUDE = '$__include';
+
     /** @param list<string> $selectors The app's components: a @class. on their tags is an error */
     public function __construct(string $source, private readonly array $selectors = [])
     {

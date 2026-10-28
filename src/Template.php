@@ -5,6 +5,7 @@ namespace Io\Live;
 use BadMethodCallException;
 
 use Closure;
+use Io\Html;
 use InvalidArgumentException;
 use LogicException;
 use ReflectionClass;
@@ -244,9 +245,11 @@ final class Template
      * @param Closure(string, array<string, mixed>): string $child Renders a child component's tag.
      * @param (Closure(string, list<mixed>|null=): string)|null $action Keeps a method and its arguments (none for a plain call), returns the ID the browser calls it by.
      * @param (Closure(string): callable)|null $helper A view helper by its name, for `$this->t()` and the like.
+     * @param (Closure(string, mixed=): Html)|null $include Renders a view for `@include`.
      */
-    public function render(object $component, Closure $child, ?Closure $action = null, ?Closure $helper = null): string
+    public function render(object $component, Closure $child, ?Closure $action = null, ?Closure $helper = null, ?Closure $include = null): string
     {
+        $include ??= static fn (string $view): Html => throw new LogicException("@include ('$view') needs an app to render in");
         $helper ??= static fn (string $name): callable => throw new BadMethodCallException("View helper '$name' is not provided by any registered plugin.");
         $action ??= static fn (string $method, ?array $args = null): string => $args === null
             ? $method
@@ -255,9 +258,9 @@ final class Template
         ob_start();
         try {
             // ponytail: eval on every render; a compiled file in a cache directory lets opcache keep it once renders get hot
-            (function (string $__code, Closure $__child, Closure $__action, Closure $__helper): void {
+            (function (string $__code, Closure $__child, Closure $__action, Closure $__helper, Closure $__include): void {
                 eval($__code);
-            })->call($component, $this->code, $child, $action, $helper);
+            })->call($component, $this->code, $child, $action, $helper, $include);
             return (string) ob_get_contents();
         } catch (Throwable $e) {
             // The innermost template keeps it: a child's template renders inside its parent's

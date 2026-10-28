@@ -10,6 +10,7 @@ use ReflectionObject;
 use Throwable;
 use WeakMap;
 use Io\Attributes\Inject;
+use Io\Html;
 use Io\Http\{Request, UploadedFile};
 use Io\Support\FiberLocal;
 
@@ -787,7 +788,7 @@ final class Circuit
             }
             $child->inputs = $inputs;
             return sprintf('<%1$s data-live data-live-id="%2$s">%3$s</%1$s>', $selector, htmlspecialchars($child->id, ENT_QUOTES), $this->html($child));
-        }, $action, $this->live->helper(...));
+        }, $action, $this->live->helper(...), fn (string $view, mixed $model = null): Html => $this->live->include($view, $model, $this->connection->request));
         foreach (array_diff_key($node->children, $placed) as $key => $gone) {
             $this->remove($gone);
             unset($node->children[$key]);

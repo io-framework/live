@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use Io\App;
 use Io\Live\LivePlugin;
 use Io\Live\Testing\Tab;
-use Io\Live\Tests\Fixtures\{Basket, BasketBadge, Board, Counter, Greeter, Item, ItemList, Door, Shop, ShoutPlugin, Uploader};
+use Io\Live\Tests\Fixtures\{Basket, BasketBadge, Board, Counter, Badged, Greeter, Item, ItemList, Door, Shop, ShoutPlugin, Uploader};
 
 final class TabTest extends TestCase
 {
@@ -16,8 +16,9 @@ final class TabTest extends TestCase
     {
         App::reset();
         $this->app = App::create();
-        $this->app->plugin(new LivePlugin([Counter::class, ItemList::class, Item::class, Shop::class, Uploader::class, Door::class, BasketBadge::class, Board::class, Greeter::class]));
+        $this->app->plugin(new LivePlugin([Counter::class, ItemList::class, Item::class, Shop::class, Uploader::class, Door::class, BasketBadge::class, Board::class, Greeter::class, Badged::class]));
         $this->app->plugin(new ShoutPlugin());
+        $this->app->configure(fn (\Io\Options\RendererOptions $views) => $views->directory = __DIR__ . '/Fixtures/views');
         $this->app->attach([]);
     }
 
@@ -50,6 +51,13 @@ final class TabTest extends TestCase
         $greeter = Tab::for($this->app)->mount('test-greeter');
 
         $this->assertStringContainsString('<p>HELLO MIA</p>', $greeter->html());
+    }
+
+    public function testATemplateIncludesAViewOfTheApp(): void
+    {
+        $badged = Tab::for($this->app)->mount('test-badged');
+
+        $this->assertStringContainsString('<div><span class="badge">&lt;new&gt;</span>', $badged->html());
     }
 
     public function testAClickTogglesAConditionalClass(): void

@@ -11,7 +11,9 @@ use Io\Container;
 use Io\Environment;
 use Io\Logger;
 use Io\Http\{Request, Response};
+use Io\Html;
 use Io\Plugin\{ClientAsset, PluginBase, ResponseHook, ViewHelper, ViewHelpers};
+use Io\View\Partials;
 use Io\RouteCompiler;
 use Io\Routing\{PropertyInjector, RouteGuard};
 
@@ -196,6 +198,12 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
     public function hooks(): array
     {
         return [$this];
+    }
+
+    /** @internal A view rendered for `@include` in a template, as in a view */
+    public function include(string $view, mixed $model, ?Request $request): Html
+    {
+        return $this->container->get(Partials::class)->render($view, $model, $request);
     }
 
     /** @internal A view helper of any plugin, for `$this->t()` in a template as in a view */

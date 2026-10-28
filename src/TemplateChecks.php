@@ -24,7 +24,7 @@ final class TemplateChecks implements Checks
      *
      * @template T of object
      * @param class-string<T> $class
-     * @param Closure(Closure(string, array<string, mixed>): string, Closure(string, list<mixed>|null=): string, Closure(string): (callable(mixed...): mixed)): void $template
+     * @param Closure(Closure(string, array<string, mixed>): string, Closure(string, list<mixed>|null=): string, Closure(string): (callable(mixed...): mixed), Closure(string, mixed=): \Io\Html): void $template
      * @param-closure-this T $template
      */
     public static function bind(string $class, Closure $template): void
@@ -45,6 +45,9 @@ final class TemplateChecks implements Checks
             $source = (string) @file_get_contents($path);
             if (isset($broken[$path])) {
                 continue;
+            }
+            foreach (Check::includes($source, Check::directories($this->root)) as $problem) {
+                $problems[] = ['file' => $path] + $problem;
             }
             $php = Template::compile($source, $components->selectors(), class: $class);
             preg_match_all("/\\\$__helper\\('(\\w+)'\\)/", $php, $calls, PREG_OFFSET_CAPTURE);
@@ -76,7 +79,7 @@ final class TemplateChecks implements Checks
             // Line for line: the compiled template leaves PHP on the first line, after its namespace and imports and the
             // bind. The closing tag at the end ends a template that ends in PHP, and is only text after one that ends in HTML
             $generated = "$directory/$selector.php";
-            $bind = '\\' . self::class . '::bind(\\' . $class . '::class, function ($__child, $__action, $__helper): void { ';
+            $bind = '\\' . self::class . '::bind(\\' . $class . '::class, function ($__child, $__action, $__helper, $__include): void { ';
             file_put_contents($generated, '<?php ' . Template::compile($source, $components->selectors(), class: $class, first: $bind) . "\n?><?php });\n");
             $templates[$generated] = $path;
         }

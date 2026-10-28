@@ -149,6 +149,8 @@ After the bakery's `src/Components/OrderBoard.Template.php`, shortened:
   A call `$this->name(...)` the component has no method for goes to the helper of that name; a method of the
   component wins, and a component with `__call()` keeps every call for itself.
   io-check reports a helper no installed plugin offers, at its line in the template.
+- `@include ('Partials/Poster', ['src' => $src])` renders a view of the app here, as in a view. Events inside it
+  are not wired: `data-on-*` stays in the component's template.
 - `<li class="step" @class.current="$step === $order->status">` adds `current` to the class while the condition holds; the name
   runs to the first `=` outside `[ ]`, so Tailwind classes like `md:w-1/2` work. The attribute's own classes
   go through the same `classes()`, so each class comes once.
