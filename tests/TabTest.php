@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use Io\App;
 use Io\Live\LivePlugin;
 use Io\Live\Testing\Tab;
-use Io\Live\Tests\Fixtures\{Basket, BasketBadge, Board, Counter, Item, ItemList, Door, Shop, Uploader};
+use Io\Live\Tests\Fixtures\{Basket, BasketBadge, Board, Counter, Greeter, Item, ItemList, Door, Shop, ShoutPlugin, Uploader};
 
 final class TabTest extends TestCase
 {
@@ -16,7 +16,8 @@ final class TabTest extends TestCase
     {
         App::reset();
         $this->app = App::create();
-        $this->app->plugin(new LivePlugin([Counter::class, ItemList::class, Item::class, Shop::class, Uploader::class, Door::class, BasketBadge::class, Board::class]));
+        $this->app->plugin(new LivePlugin([Counter::class, ItemList::class, Item::class, Shop::class, Uploader::class, Door::class, BasketBadge::class, Board::class, Greeter::class]));
+        $this->app->plugin(new ShoutPlugin());
         $this->app->attach([]);
     }
 
@@ -42,6 +43,13 @@ final class TabTest extends TestCase
         $this->assertSame(5, $counter->component()->count);
         // The template escapes what it prints: assertSee looks for the escaped text
         $counter->assertSee('<b>');
+    }
+
+    public function testATemplateCallsAnotherPluginsViewHelperThroughThis(): void
+    {
+        $greeter = Tab::for($this->app)->mount('test-greeter');
+
+        $this->assertStringContainsString('<p>HELLO MIA</p>', $greeter->html());
     }
 
     public function testAClickTogglesAConditionalClass(): void

@@ -787,7 +787,7 @@ final class Circuit
             }
             $child->inputs = $inputs;
             return sprintf('<%1$s data-live data-live-id="%2$s">%3$s</%1$s>', $selector, htmlspecialchars($child->id, ENT_QUOTES), $this->html($child));
-        }, $action);
+        }, $action, $this->live->helper(...));
         foreach (array_diff_key($node->children, $placed) as $key => $gone) {
             $this->remove($gone);
             unset($node->children[$key]);

@@ -11,7 +11,7 @@ use Io\Container;
 use Io\Environment;
 use Io\Logger;
 use Io\Http\{Request, Response};
-use Io\Plugin\{ClientAsset, PluginBase, ResponseHook, ViewHelper};
+use Io\Plugin\{ClientAsset, PluginBase, ResponseHook, ViewHelper, ViewHelpers};
 use Io\RouteCompiler;
 use Io\Routing\{PropertyInjector, RouteGuard};
 
@@ -196,6 +196,12 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
     public function hooks(): array
     {
         return [$this];
+    }
+
+    /** @internal A view helper of any plugin, for `$this->t()` in a template as in a view */
+    public function helper(string $name): callable
+    {
+        return $this->container->get(ViewHelpers::class)->get($name);
     }
 
     public function helpers(): array

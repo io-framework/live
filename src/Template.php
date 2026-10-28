@@ -2,6 +2,8 @@
 
 namespace Io\Live;
 
+use BadMethodCallException;
+
 use Closure;
 use InvalidArgumentException;
 use LogicException;
@@ -74,7 +76,41 @@ final class Template
                 throw new InvalidArgumentException("line {$problem['line']}: {$problem['message']}");
             }
         }
-        return self::header($class, $directives->uses) . $first . '?>' . View::escapeEchoes(self::children(self::calls($directives->compile(), $actions), $selectors));
+        $code = self::header($class, $directives->uses) . $first . '?>' . View::escapeEchoes(self::children(self::calls($directives->compile(), $actions), $selectors));
+        return self::helpers($code, $class);
+    }
+
+    /**
+     * `$this->t(...)` for a method the component does not have becomes `$__helper('t')(...)`: the view helpers of the
+     * plugins (I18n's t(), Live's live()), as in a view. A component with __call() keeps every call.
+     *
+     * @param class-string|null $class
+     */
+    private static function helpers(string $code, ?string $class): string
+    {
+        if ($class === null || !class_exists($class) || method_exists($class, '__call')) {
+            return $code;
+        }
+        $tokens = token_get_all('<?php ' . $code);
+        array_shift($tokens);
+        $out = '';
+        $count = count($tokens);
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            $next = $tokens[$i + 1] ?? null;
+            $name = $tokens[$i + 2] ?? null;
+            if (is_array($token) && $token[0] === T_VARIABLE && $token[1] === '$this'
+                && is_array($next) && $next[0] === T_OBJECT_OPERATOR
+                && is_array($name) && $name[0] === T_STRING
+                && ($tokens[$i + 3] ?? null) === '('
+                && !method_exists($class, $name[1])) {
+                $out .= "\$__helper('{$name[1]}')";
+                $i += 2;
+                continue;
+            }
+            $out .= is_array($token) ? $token[1] : $token;
+        }
+        return $out;
     }
 
     /**
@@ -207,9 +243,11 @@ final class Template
     /**
      * @param Closure(string, array<string, mixed>): string $child Renders a child component's tag.
      * @param (Closure(string, list<mixed>|null=): string)|null $action Keeps a method and its arguments (none for a plain call), returns the ID the browser calls it by.
+     * @param (Closure(string): callable)|null $helper A view helper by its name, for `$this->t()` and the like.
      */
-    public function render(object $component, Closure $child, ?Closure $action = null): string
+    public function render(object $component, Closure $child, ?Closure $action = null, ?Closure $helper = null): string
     {
+        $helper ??= static fn (string $name): callable => throw new BadMethodCallException("View helper '$name' is not provided by any registered plugin.");
         $action ??= static fn (string $method, ?array $args = null): string => $args === null
             ? $method
             : throw new LogicException("data-on-*=\"$method(...)\" needs a circuit to render in");
@@ -217,9 +255,9 @@ final class Template
         ob_start();
         try {
             // ponytail: eval on every render; a compiled file in a cache directory lets opcache keep it once renders get hot
-            (function (string $__code, Closure $__child, Closure $__action): void {
+            (function (string $__code, Closure $__child, Closure $__action, Closure $__helper): void {
                 eval($__code);
-            })->call($component, $this->code, $child, $action);
+            })->call($component, $this->code, $child, $action, $helper);
             return (string) ob_get_contents();
         } catch (Throwable $e) {
             // The innermost template keeps it: a child's template renders inside its parent's
