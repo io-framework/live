@@ -74,6 +74,9 @@ The selector is `app-` and the class name in kebab case (`CartBadge` is `<app-ca
 1. The page's tags (or `$this->live('app-add-to-cart', ['product' => 3])`) create the component, set its `#[Input]`
    properties and render the template into the page, wrapped in its selector: `<app-add-to-cart data-live data-inputs="{...}">`. Without JavaScript the page
    stays as rendered.
+   An input marked `#[Input(query: true)]` (or `query: 'status'` for another name) takes the page's query
+   parameter when the tag does not set it: a search page is `<app-search></app-search>` and starts from
+   `/search?q=pretzel&page=2`, converted to the property's type, a value that does not fit leaves the default.
 2. `live.js` opens a WebSocket to `/_live`, a normal Io route: the app's middlewares and guards run, and
    the connection is refused unless its `Origin` is this site.
 3. The server creates every component again with the same inputs (a "circuit" per tab) and keeps it in memory

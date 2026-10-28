@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use Io\App;
 use Io\Live\LivePlugin;
 use Io\Live\Testing\Tab;
-use Io\Live\Tests\Fixtures\{Basket, BasketBadge, Board, Counter, Badged, Greeter, Item, ItemList, Door, Shop, ShoutPlugin, Uploader};
+use Io\Live\Tests\Fixtures\{Basket, BasketBadge, Board, Counter, Badged, Greeter, Item, Searcher, ItemList, Door, Shop, ShoutPlugin, Uploader};
 
 final class TabTest extends TestCase
 {
@@ -16,7 +16,7 @@ final class TabTest extends TestCase
     {
         App::reset();
         $this->app = App::create();
-        $this->app->plugin(new LivePlugin([Counter::class, ItemList::class, Item::class, Shop::class, Uploader::class, Door::class, BasketBadge::class, Board::class, Greeter::class, Badged::class]));
+        $this->app->plugin(new LivePlugin([Counter::class, ItemList::class, Item::class, Shop::class, Uploader::class, Door::class, BasketBadge::class, Board::class, Greeter::class, Badged::class, Searcher::class]));
         $this->app->plugin(new ShoutPlugin());
         $this->app->configure(fn (\Io\Options\RendererOptions $views) => $views->directory = __DIR__ . '/Fixtures/views');
         $this->app->attach([]);
@@ -58,6 +58,18 @@ final class TabTest extends TestCase
         $badged = Tab::for($this->app)->mount('test-badged');
 
         $this->assertStringContainsString('<div><span class="badge">&lt;new&gt;</span>', $badged->html());
+    }
+
+    public function testQueryInputsStartFromThePagesQueryString(): void
+    {
+        $page = fn (string $uri, array $inputs = []): string => Tab::page($this->app, 'test-searcher', $inputs, \Io\Http\Request::fromParts('GET', $uri));
+
+        $this->assertStringContainsString('<p>pretzel|3</p>', $page('/s?q=pretzel&p=3'));
+        // A value that does not fit leaves the default; the tag's own value wins over the query
+        $this->assertStringContainsString('<p>pretzel|1</p>', $page('/s?q=pretzel&p=three'));
+        $this->assertStringContainsString('<p>tag|3</p>', $page('/s?q=pretzel&p=3', ['q' => 'tag']));
+        // It goes into data-inputs, so the component keeps it when the browser connects
+        $this->assertStringContainsString('&quot;page&quot;:3', $page('/s?p=3'));
     }
 
     public function testAClickTogglesAConditionalClass(): void

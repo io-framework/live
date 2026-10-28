@@ -11,7 +11,7 @@ use Io\Container;
 use Io\Environment;
 use Io\Logger;
 use Io\Http\{Request, Response};
-use Io\Html;
+use Io\{Html, Hydrator};
 use Io\Plugin\{ClientAsset, PluginBase, ResponseHook, ViewHelper, ViewHelpers};
 use Io\View\Partials;
 use Io\RouteCompiler;
@@ -269,6 +269,36 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
             }
             $component->{$name} = $value;
         }
+    }
+
+    /**
+     * @internal The #[Input(query: ...)] values of $selector's component from the request's query string, converted to
+     * the properties' types; a value that does not fit is left out, so the property keeps its default.
+     *
+     * @return array<string, mixed>
+     */
+    public function queryInputs(string $selector, Request $request): array
+    {
+        $class = $this->components->get($selector)[0] ?? null;
+        if ($class === null) {
+            return [];
+        }
+        $inputs = [];
+        foreach ((new ReflectionClass($class))->getProperties() as $property) {
+            $query = ($property->getAttributes(Input::class)[0] ?? null)?->newInstance()->query;
+            if ($query === null || $query === false) {
+                continue;
+            }
+            $value = $request->query($query === true ? $property->getName() : $query);
+            if ($value === null) {
+                continue;
+            }
+            [$fits, $converted] = Hydrator::fitting($property->getType(), $value);
+            if ($fits) {
+                $inputs[$property->getName()] = $converted;
+            }
+        }
+        return $inputs;
     }
 
     /**
