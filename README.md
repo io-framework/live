@@ -77,6 +77,9 @@ The selector is `app-` and the class name in kebab case (`CartBadge` is `<app-ca
    An input marked `#[Input(query: true)]` (or `query: 'status'` for another name) takes the page's query
    parameter when the tag does not set it: a search page is `<app-search></app-search>` and starts from
    `/search?q=pretzel&page=2`, converted to the property's type, a value that does not fit leaves the default.
+   It goes the other way too: when an action or a timer changes such a property, the browser writes it into the
+   address with `history.replaceState()` (a list as `tag[]=a&tag[]=b`, a default leaves its parameter out), so
+   the page as it is can be shared, bookmarked and reloaded. `$tab->assertQuery(['q' => 'pretzel'])` checks it.
 2. `live.js` opens a WebSocket to `/_live`, a normal Io route: the app's middlewares and guards run, and
    the connection is refused unless its `Origin` is this site.
 3. The server creates every component again with the same inputs (a "circuit" per tab) and keeps it in memory

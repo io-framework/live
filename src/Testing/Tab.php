@@ -41,6 +41,9 @@ final class Tab
 
     private ?string $navigation = null;
 
+    /** @var array<string, mixed> the query values the address shows, by key */
+    private array $query = [];
+
     private function __construct(private readonly LivePlugin $live, ?Request $request)
     {
         $this->circuit = new Circuit(
@@ -121,6 +124,17 @@ final class Tab
         return $this;
     }
 
+    /**
+     * That the browser's address shows these #[Input(query: ...)] values, by query key; null for one it leaves out
+     *
+     * @param array<string, mixed> $query
+     */
+    public function assertQuery(array $query): self
+    {
+        Assert::assertSame($query, array_intersect_key($this->query, $query), 'The address shows other query values');
+        return $this;
+    }
+
     /** That the last navigate() of an action or timer in this tab asked for $url. */
     public function assertNavigatedTo(string $url): self
     {
@@ -159,6 +173,10 @@ final class Tab
         }
         if (($message['t'] ?? null) === 'navigate' && is_string($message['url'] ?? null)) {
             $this->navigation = $message['url'];
+        } elseif (($message['t'] ?? null) === 'query' && is_array($message['q'] ?? null)) {
+            foreach ($message['q'] as $key => $value) {
+                $this->query[(string) $key] = $value;
+            }
         } elseif (is_string($message['id'] ?? null) && is_string($message['html'] ?? null)) {
             $this->html[$message['id']] = $message['html'];
         }

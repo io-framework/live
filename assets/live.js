@@ -44,6 +44,29 @@
                 location.assign(message.url);
                 return;
             }
+            // #[Input(query: ...)] changed: the address shows it (for sharing and reloading) and the inputs keep it
+            // (for mounting again after a lost connection); a default leaves its parameter out
+            if (message.t === 'query') {
+                const url = new URL(location.href);
+                for (const [key, value] of Object.entries(message.q)) {
+                    url.searchParams.delete(key);
+                    url.searchParams.delete(`${key}[]`);
+                    if (value === null) continue;
+                    if (Array.isArray(value)) for (const item of value) url.searchParams.append(`${key}[]`, String(item));
+                    else url.searchParams.set(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value));
+                }
+                history.replaceState(history.state, '', url);
+                const root = document.querySelector(`[data-live-id="${CSS.escape(message.id)}"]`);
+                if (root) {
+                    const inputs = JSON.parse(root.dataset.inputs || '{}');
+                    for (const [name, value] of Object.entries(message.i)) {
+                        if (value === null) delete inputs[name];
+                        else inputs[name] = value;
+                    }
+                    root.dataset.inputs = JSON.stringify(inputs);
+                }
+                return;
+            }
             if (message.t === 'circuit') {
                 // In dev, PHP ran again: only a component changed, so the components come back with their state;
                 // anything else, the page loads again

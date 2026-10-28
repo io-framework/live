@@ -32,6 +32,9 @@ final class Circuit
     /** @var array<string, Node> Every component by ID, children included. */
     private array $nodes = [];
 
+    /** @var array<string, array<string, mixed>> node id => the query values last sent for it */
+    private array $queries = [];
+
     private int $roots = 0;
 
     /** @var Closure(float, Closure(): void): (Closure(): void) */
@@ -185,6 +188,7 @@ final class Circuit
         }
         $this->trace();
         $this->navigate();
+        $this->query();
     }
 
     /**
@@ -263,6 +267,30 @@ final class Circuit
             is_float($value) && !is_finite($value) => is_nan($value) ? 'NAN' : ($value > 0 ? 'INF' : '-INF'),
             default => $value,
         };
+    }
+
+    /**
+     * #[Input(query: ...)] properties of the top-level components that changed since they were last sent: the
+     * browser writes them into its address, so the page can be shared and reloaded as it is, and into the inputs
+     * it mounts with after a lost connection.
+     */
+    private function query(): void
+    {
+        foreach ($this->nodes as $node) {
+            if ($node->root !== null) {
+                continue;
+            }
+            [$query, $inputs] = $this->live->queryOf($node->component);
+            if ($query === [] || ($this->queries[$node->id] ?? null) === $query) {
+                continue;
+            }
+            $first = !isset($this->queries[$node->id]);
+            $this->queries[$node->id] = $query;
+            // The first state is what the page's address says already
+            if (!$first) {
+                ($this->send)(json_encode(['t' => 'query', 'id' => $node->id, 'q' => $query, 'i' => $inputs], JSON_THROW_ON_ERROR));
+            }
+        }
     }
 
     /** An action asked for another page: the browser goes there. */
@@ -680,6 +708,7 @@ final class Circuit
                     }
                     $this->trace();
                     $this->navigate();
+                    $this->query();
                 }));
             }
         }

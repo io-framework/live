@@ -302,6 +302,32 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
     }
 
     /**
+     * @internal The #[Input(query: ...)] values of a component as the address shows them, by query key, and as inputs,
+     * by property: null where a property holds its default, so the address leaves it out.
+     *
+     * @return array{array<string, mixed>, array<string, mixed>}
+     */
+    public function queryOf(object $component): array
+    {
+        $query = [];
+        $inputs = [];
+        foreach ((new ReflectionClass($component))->getProperties() as $property) {
+            $key = ($property->getAttributes(Input::class)[0] ?? null)?->newInstance()->query;
+            if ($key === null || $key === false || !$property->isInitialized($component)) {
+                continue;
+            }
+            $value = $property->getValue($component);
+            $value = $value instanceof \BackedEnum ? $value->value : $value;
+            $default = $property->hasDefaultValue() ? $property->getDefaultValue() : null;
+            $default = $default instanceof \BackedEnum ? $default->value : $default;
+            $shown = $value === $default ? null : $value;
+            $query[$key === true ? $property->getName() : $key] = $shown;
+            $inputs[$property->getName()] = $shown;
+        }
+        return [$query, $inputs];
+    }
+
+    /**
      * @internal Whether $name is an #[Input] the page and parent templates may set.
      *
      * @param class-string $class

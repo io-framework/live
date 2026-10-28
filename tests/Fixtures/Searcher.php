@@ -16,4 +16,15 @@ final class Searcher
 
     #[Input(query: 'p')]
     public int $page = 1;
+
+    public function search(string $q): void
+    {
+        $this->q = $q;
+        $this->page = 1;
+    }
+
+    public function next(): void
+    {
+        $this->page++;
+    }
 }

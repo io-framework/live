@@ -72,6 +72,18 @@ final class TabTest extends TestCase
         $this->assertStringContainsString('&quot;page&quot;:3', $page('/s?p=3'));
     }
 
+    public function testAChangedQueryInputGoesIntoTheAddress(): void
+    {
+        $tab = Tab::for($this->app);
+        $searcher = $tab->mount('test-searcher', ['q' => 'start', 'page' => 3]);
+
+        $searcher->click('next');
+        $tab->assertQuery(['q' => 'start', 'p' => 4]);
+        $searcher->click('search');
+        // Back at its default, the page leaves the address
+        $tab->assertQuery(['q' => 'pretzel', 'p' => null]);
+    }
+
     public function testAClickTogglesAConditionalClass(): void
     {
         $board = Tab::for($this->app)->mount('test-board');
