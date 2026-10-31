@@ -140,6 +140,36 @@ A tab whose connection dropped renders when it comes back.
 
 A broadcast renders every tab of every user, whether it shows an order or not; tabs whose HTML did not change send nothing. It is meant for changes that are rare compared to the number of open tabs.
 
+### Topics
+
+A change that only some components show names a topic: `changed("comments:$anime")`. A component names the topics it renders for with a method marked [`#[Topics]`](../reference/Io/Live/Topics.md). It runs when a broadcast with topics arrives, so it follows the component's inputs:
+
+```php
+#[Component]
+final class Comments
+{
+    #[Input]
+    public int $anime = 0;
+
+    #[Inject]
+    private Broadcast $broadcast;
+
+    #[Topics]
+    public function topics(): array
+    {
+        return ["comments:$this->anime"];
+    }
+
+    public function post(CommentForm $form): void
+    {
+        // ... store the comment
+        $this->broadcast->changed("comments:$this->anime");
+    }
+}
+```
+
+Such a broadcast renders only the top-level components that hold a component naming one of its topics, a child included; every other component and every other tab stays as it is. A component without `#[Topics]` renders for a broadcast without topics only, and `changed()` without topics still renders everything. `changedHere()` takes topics the same way, and topics travel to the other workers with the broadcast.
+
 Each tab renders with its own connection's request values (its locale, its request id in the log), not with those of the request that called `changed()` ([The connection](connection.md#connection)): a customer's order page stays in German when an English-speaking member of staff moves the order on.
 
 ## Several workers

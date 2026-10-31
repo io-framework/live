@@ -9,12 +9,14 @@ use WeakMap;
  * tab only renders after its own actions and timers; `$broadcast->changed()` after a change reaches the others.
  * Inject it into a component or a service, or take it with `$app->get(Broadcast::class)`.
  *
+ * With topics, `$broadcast->changed("comments:$anime")` renders only the components whose #[Topics] method names
+ * one of them, and leaves every other tab alone.
+ *
  * Under a Tenma with Messaging\Channel::publish(), the other workers render their tabs too, and with `tenma --pubsub` every
  * process on that Redis.
  */
 final class Broadcast
 {
-    // ponytail: every tab of every app on the channel; a topic per broadcast once rendering every tab costs too much
     private const CHANNEL = 'io-live';
 
     /** @var WeakMap<Circuit, true> The circuits whose browser is connected. */
@@ -29,13 +31,17 @@ final class Broadcast
         $this->circuits = new WeakMap();
     }
 
-    /** Every connected tab renders, and sends the components whose HTML changed. */
-    public function changed(): void
+    /**
+     * Every connected tab renders, and sends the components whose HTML changed. With $topics only the top-level
+     * components that hold a component whose #[Topics] method names one of them.
+     */
+    public function changed(string ...$topics): void
     {
         if (self::acrossWorkers()) {
-            new \Messaging\Channel(self::CHANNEL)->publish('');
+            $message = json_encode(array_values($topics), JSON_THROW_ON_ERROR);
+            new \Messaging\Channel(self::CHANNEL)->publish($message);
         } else {
-            $this->changedHere();
+            $this->changedHere(...$topics);
         }
     }
 
@@ -48,18 +54,29 @@ final class Broadcast
 
     /**
      * Only this worker's tabs render: in a Messaging\Channel::subscribe() callback that has just brought this worker's state
-     * up to date. Every worker runs it, so changed() would render every tab once per worker.
+     * up to date. Every worker runs it, so changed() would render every tab once per worker. $topics as in changed().
      */
-    public function changedHere(): void
+    public function changedHere(string ...$topics): void
     {
+        $topics = array_values($topics);
         // A render may wait on a query while a tab connects or leaves: go through the tabs as they were
         $circuits = [];
         foreach ($this->circuits as $circuit => $_) {
             $circuits[] = $circuit;
         }
         foreach ($circuits as $circuit) {
-            $circuit->changed(cause: 'a broadcast');
+            $circuit->changed(cause: 'a broadcast', topics: $topics);
         }
+    }
+
+    /** A broadcast from any worker: the topics as JSON, an empty message from an older worker for every tab. */
+    private function received(string $message): void
+    {
+        $topics = $message === '' ? [] : json_decode($message, true);
+        if (!is_array($topics)) {
+            $topics = [];
+        }
+        $this->changedHere(...array_filter($topics, is_string(...)));
     }
 
     /** @internal In dev: a saved template that does not compile, or null once it does again, to this worker's tabs. */
@@ -77,7 +94,7 @@ final class Broadcast
         // Detached, it belongs to no request: one made in this tab's request would end when the tab closes.
         if (!$this->subscribed && self::acrossWorkers()) {
             $this->subscribed = true;
-            \Threading\Task::detach(fn () => new \Messaging\Channel(self::CHANNEL)->subscribe(fn () => $this->changedHere()));
+            \Threading\Task::detach(fn () => new \Messaging\Channel(self::CHANNEL)->subscribe($this->received(...)));
         }
         $this->circuits[$circuit] = true;
     }

@@ -62,6 +62,10 @@ final class Problems
                     $problems[] = ['line' => (int) $method->getStartLine(), 'message' => $message, 'severity' => 'error'];
                 }
             }
+            if ($method->getAttributes(Topics::class) !== [] && $method->getNumberOfRequiredParameters() > 0) {
+                $message = "#[Topics] {$method->getName()}(): a broadcast calls its method without arguments";
+                $problems[] = ['line' => (int) $method->getStartLine(), 'message' => $message, 'severity' => 'error'];
+            }
         }
         $source = (string) @file_get_contents((string) $reflection->getFileName());
         foreach ($reflection->getProperties() as $property) {

@@ -238,6 +238,29 @@ public function advance(Order $order): void
 
 Outside a component, `$app->get(Broadcast::class)`. A tab whose connection dropped renders when it comes back.
 
+A change that only some components show names a topic. A component names the topics it renders for with a
+`#[Topics]` method, which runs when a broadcast with topics arrives, so it follows the component's inputs:
+
+```php
+#[Input]
+public int $anime = 0;
+
+#[Topics]
+public function topics(): array
+{
+    return ["comments:$this->anime"];
+}
+
+public function post(CommentForm $form): void
+{
+    // ...
+    $this->broadcast->changed("comments:$this->anime");
+}
+```
+
+`changed('comments:7')` renders only the top-level components that hold such a component, in the tabs that have
+one; `changed()` without topics still renders everything. Topics travel to the other workers too.
+
 With several workers, `changed()` goes out through `Messaging\Channel::publish()`: every worker renders its tabs, with
 `tenma --pubsub redis://host` every process on that Redis too. Each worker has its own memory, though: that is
 enough for state in Postgres or Redis, as the bakery's orders under `tenma --workers 2`. State in memory goes to every worker with its own message, and each worker

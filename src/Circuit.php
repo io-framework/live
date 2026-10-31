@@ -79,6 +79,9 @@ final class Circuit
     /** @var array<string, array<array-key, mixed>> In dev: state to put back into the components with these IDs, after PHP reloaded */
     private array $restore = [];
 
+    /** @var array<class-string, ReflectionMethod|null> Each component class's #[Topics] method, once looked up */
+    private static array $topicsMethods = [];
+
     /**
      * @param Closure(string): void $send Writes one message to the browser.
      * @param Closure(Throwable): void $report Logs a failure.
@@ -733,34 +736,42 @@ final class Circuit
      * browser. A child calling back into its parent, or a #[Scoped] service shared with another top-level
      * component, needs no bookkeeping that way.
      *
-     * Broadcast calls it for changes made elsewhere.
+     * Broadcast calls it for changes made elsewhere, with $topics only for the top-level components that hold one
+     * whose #[Topics] method names one of them.
      *
      * ponytail: renders the whole tab on every change; track what each render read once tabs get big
      *
+     * @param list<string> $topics
      * @internal
      */
-    public function changed(bool $onlyIfChanged = true, ?string $cause = null): void
+    public function changed(bool $onlyIfChanged = true, ?string $cause = null, array $topics = []): void
     {
         if ($this->closedIfExpired()) {
             return;
         }
         // From outside an action or a timer (a broadcast, a reconnect): with the tab's own request values
         if ($cause !== null) {
-            $this->within(fn () => $this->renderAll($onlyIfChanged, $cause));
+            $this->within(fn () => $this->renderAll($onlyIfChanged, $cause, $topics));
         } else {
-            $this->renderAll($onlyIfChanged, null);
+            $this->renderAll($onlyIfChanged, null, $topics);
         }
     }
 
-    private function renderAll(bool $onlyIfChanged, ?string $cause): void
+    /** @param list<string> $topics */
+    private function renderAll(bool $onlyIfChanged, ?string $cause, array $topics): void
     {
+        $listening = $topics === [] ? null : $this->listening($topics);
+        // A tab where no component names a topic does nothing, not even a trace
+        if ($listening === []) {
+            return;
+        }
         $this->cause = $cause ?? $this->cause;
         // From outside an action or a timer (a broadcast, a reconnect): a trace of its own
         if ($cause !== null) {
             $this->started = hrtime(true);
         }
         foreach ($this->nodes as $node) {
-            if ($node->root !== null) {
+            if ($node->root !== null || ($listening !== null && !isset($listening[$node->id]))) {
                 continue;
             }
             // A component whose render fails doesn't hold back the others
@@ -773,6 +784,53 @@ final class Circuit
         if ($cause !== null) {
             $this->trace();
         }
+    }
+
+    /**
+     * The top-level components that hold a component whose #[Topics] method names one of $topics, by ID.
+     *
+     * @param list<string> $topics
+     * @return array<string, true>
+     */
+    private function listening(array $topics): array
+    {
+        $listening = [];
+        foreach ($this->nodes as $node) {
+            $root = $node->root ?? $node;
+            if (isset($listening[$root->id])) {
+                continue;
+            }
+            $method = self::topicsMethod($node->component);
+            if ($method === null) {
+                continue;
+            }
+            // A topics method that fails shows on its component, the others still hear the broadcast
+            try {
+                $names = $method->invoke($node->component);
+            } catch (Throwable $e) {
+                $this->failed($node->id, $e, $node->selector);
+                continue;
+            }
+            $names = is_array($names) ? array_filter($names, is_string(...)) : [];
+            if (array_intersect($names, $topics) !== []) {
+                $listening[$root->id] = true;
+            }
+        }
+        return $listening;
+    }
+
+    /** The component's #[Topics] method, or null when it has none. */
+    private static function topicsMethod(object $component): ?ReflectionMethod
+    {
+        if (!array_key_exists($component::class, self::$topicsMethods)) {
+            self::$topicsMethods[$component::class] = null;
+            foreach ((new ReflectionObject($component))->getMethods() as $method) {
+                if ($method->getAttributes(Topics::class) !== []) {
+                    self::$topicsMethods[$component::class] = $method;
+                }
+            }
+        }
+        return self::$topicsMethods[$component::class];
     }
 
     private function render(Node $node, bool $onlyIfChanged = false): void

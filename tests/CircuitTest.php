@@ -46,7 +46,7 @@ final class CircuitTest extends TestCase
 
     private function plugin(bool $dev = false): LivePlugin
     {
-        $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class, \Io\Live\Tests\Fixtures\Safe::class]);
+        $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class, \Io\Live\Tests\Fixtures\Safe::class, \Io\Live\Tests\Fixtures\Thread::class]);
         $container = new Container();
         $container->set(new Label('fine'));
         $container->set(new Room());
@@ -635,6 +635,43 @@ final class CircuitTest extends TestCase
         $html = "<button data-on-click=\"say\" data-arg=\"hi\">say</button>\nhi";
         $this->assertSame([['id' => 'c0', 'html' => $html], ['id' => 'c0', 'html' => $html]], $this->sent);
         $this->assertSame([], $this->reported);
+    }
+
+    public function testABroadcastWithTopicsRendersOnlyTheComponentsThatNameOne(): void
+    {
+        $live = $this->plugin();
+        $tab = $this->circuit(null, $live);
+        $tab->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-thread', 'p' => ['thread' => 1]]));
+        $tab->handle($this->message(['t' => 'mount', 'id' => 'c1', 'c' => 'test-chat', 'p' => []]));
+        $other = $this->circuit(null, $live);
+        $other->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-thread', 'p' => ['thread' => 2]]));
+        $live->scope()->get(Room::class)->messages[] = 'hi';
+        $this->sent = [];
+
+        // Thread 1 hears its topic; the chat beside it and thread 2 do not
+        $live->scope()->get(\Io\Live\Broadcast::class)->changed('thread:1');
+        $this->assertSame([['id' => 'c0', 'html' => "1: hi"]], $this->sent);
+
+        // Without topics every component renders, as before
+        $this->sent = [];
+        $live->scope()->get(\Io\Live\Broadcast::class)->changed();
+        $this->assertSame(['c1', 'c0'], array_column($this->sent, 'id'));
+    }
+
+    #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
+    public function testTopicsTravelToTheOtherWorkers(): void
+    {
+        self::fakeTenma();
+        $live = $this->plugin();
+        $tab = $this->circuit(null, $live);
+        $tab->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-thread', 'p' => ['thread' => 1]]));
+        $other = $this->circuit(null, $live);
+        $other->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-thread', 'p' => ['thread' => 2]]));
+        $live->scope()->get(Room::class)->messages[] = 'hi';
+        $this->sent = [];
+
+        $live->scope()->get(\Io\Live\Broadcast::class)->changed('thread:2');
+        $this->assertSame([['id' => 'c0', 'html' => "2: hi"]], $this->sent);
     }
 
     public function testFilesFromTheBrowserArriveAsUploadedFiles(): void
