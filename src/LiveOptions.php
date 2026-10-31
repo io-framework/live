@@ -12,4 +12,10 @@ class LiveOptions
      * `vscodium://file/{file}:{line}`, PhpStorm: `phpstorm://open?file={file}&line={line}`.
      */
     public string $editor = 'vscode://file/{file}:{line}';
+
+    /**
+     * How many top-level components one tab may mount. The browser asks for each, so this bounds what one
+     * tab costs the worker; children placed by a template don't count.
+     */
+    public int $maxComponents = 50;
 }

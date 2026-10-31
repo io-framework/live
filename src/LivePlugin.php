@@ -187,6 +187,12 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
         return $this->options->editor;
     }
 
+    /** @internal LiveOptions::$maxComponents */
+    public function maxComponents(): int
+    {
+        return $this->options->maxComponents;
+    }
+
     /** @internal The template a selector renders with now: in dev a saved one replaces the last. */
     public function template(string $selector): ?Template
     {

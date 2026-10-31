@@ -48,6 +48,6 @@ A live component runs on the server with the app's full access to its services, 
 
 ## Resource limits
 
-A tab can hold at most 50 top-level components, a call at most 20 files, and a WebSocket message at most Tenma's `--max-body`. Each open tab holds its components in the server's memory until it closes, plus up to 3 minutes parked. See [Deployment and limits](deployment.md#limits).
+A tab can hold at most 50 top-level components (`LiveOptions::$maxComponents`), a call at most 20 files, and a WebSocket message at most Tenma's `--max-body`. Each open tab holds its components in the server's memory until it closes, plus up to 3 minutes parked. See [Deployment and limits](deployment.md#limits).
 
 See also: [The connection and the user](connection.md), [Events and actions](events.md#what-the-browser-can-call).

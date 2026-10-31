@@ -33,11 +33,11 @@ Uploaded files are in memory while the action that receives them runs. Move them
 
 ## Limits
 
-Live is a proof of concept, and some limits are fixed in the code for now:
+Live is a proof of concept, and most limits are fixed in the code for now:
 
 | Limit | Value |
 |---|---|
-| Top-level components per tab | 50 |
+| Top-level components per tab | 50, `LiveOptions::$maxComponents` |
 | Files per call | 20 |
 | WebSocket message, files included | Tenma's `--max-body`, 10 MB by default; files travel base64-encoded, a third larger |
 | Parked circuits per worker | 100, the oldest goes first |

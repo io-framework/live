@@ -23,9 +23,6 @@ use Io\Support\FiberLocal;
  */
 final class Circuit
 {
-    // ponytail: fixed limit per tab, an option once an app needs more
-    private const MAX_COMPONENTS = 50;
-
     // ponytail: fixed limit per call; every file costs its content plus an object, an option once a form needs more
     private const MAX_FILES = 20;
 
@@ -230,7 +227,7 @@ final class Circuit
             }
         }
         if (count($this->nodes) > self::MANY_COMPONENTS) {
-            $warnings['crowded'] = count($this->nodes) . ' components in this tab, at most ' . self::MAX_COMPONENTS . ' top-level ones are allowed';
+            $warnings['crowded'] = count($this->nodes) . ' components in this tab, at most ' . $this->live->maxComponents() . ' top-level ones are allowed';
         }
         if (str_starts_with($this->cause, '#[Every]') && array_filter($renders, static fn (array $r) => $r[3] !== null) !== []) {
             $now = microtime(true);
@@ -466,7 +463,7 @@ final class Circuit
             }
         }
         // A dot belongs to the IDs of children, which the server numbers itself
-        if ($id === '' || str_contains($id, '.') || isset($this->nodes[$id]) || $this->roots >= self::MAX_COMPONENTS) {
+        if ($id === '' || str_contains($id, '.') || isset($this->nodes[$id]) || $this->roots >= $this->live->maxComponents()) {
             throw new InvalidArgumentException("Cannot mount component '$id'");
         }
         if (!is_string($selector) || !is_array($inputs) || ($inputs !== [] && array_is_list($inputs))) {

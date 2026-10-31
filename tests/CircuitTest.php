@@ -44,6 +44,21 @@ final class CircuitTest extends TestCase
         );
     }
 
+    public function testMountsAtMostMaxComponentsTopLevelOnes(): void
+    {
+        $live = new LivePlugin([Counter::class]);
+        $options = new LiveOptions();
+        $options->maxComponents = 2;
+        $live->boot(new Container(), self::environment(), new Logger(), $options);
+        $circuit = $this->circuit(live: $live);
+        foreach (['c0', 'c1', 'c2'] as $id) {
+            $circuit->handle($this->message(['t' => 'mount', 'id' => $id, 'c' => 'test-counter', 'p' => []]));
+        }
+
+        $this->assertSame(['c0', 'c1', 'c2'], array_column($this->sent, 'id'));
+        $this->assertSame([false, false, true], array_map(static fn (array $reply) => $reply['error'] ?? false, $this->sent));
+    }
+
     private function plugin(bool $dev = false): LivePlugin
     {
         $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class, \Io\Live\Tests\Fixtures\Safe::class, \Io\Live\Tests\Fixtures\Thread::class]);

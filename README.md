@@ -581,7 +581,7 @@ In production none of this happens: the browser only learns that a component fai
   `$this->live()`. A page's inputs travel through the browser and back, so they are JSON values only: an object
   is refused, pass its ID and load it in the component. A child placed by a template gets any value, objects
   and closures included. A tag inside `<script>`, `<textarea>` or an HTML comment is expanded too.
-- At most 50 top-level components per tab.
+- At most 50 top-level components per tab; `LiveOptions::$maxComponents` changes that.
 - The server keeps a circuit only once it notices that the old connection is dead. A browser that notices
   first (a network switch) may reconnect before that and start over.
 - A `//` comment inside `<?= ?>` breaks the template; use `/* */`.
