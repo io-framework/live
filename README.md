@@ -77,6 +77,7 @@ The selector is `app-` and the class name in kebab case (`CartBadge` is `<app-ca
    An input marked `#[Input(query: true)]` (or `query: 'status'` for another name) takes the page's query
    parameter when the tag does not set it: a search page is `<app-search></app-search>` and starts from
    `/search?q=pretzel&page=2`, converted to the property's type, a value that does not fit leaves the default.
+   An `array` property is a list of texts: `?tag=action` gives `['action']`, `?tag[]=action&tag[]=drama` both.
    It goes the other way too: when an action or a timer changes such a property, the browser writes it into the
    address with `history.replaceState()` (a list as `tag[]=a&tag[]=b`, a default leaves its parameter out), so
    the page as it is can be shared, bookmarked and reloaded. `$tab->assertQuery(['q' => 'pretzel'])` checks it.
@@ -283,6 +284,19 @@ connection's request. `navigate('/path')` sends the browser to another page of t
 done, for example after an order was placed. Only a path of the site is a destination, never another site. It counts even
 if the action throws afterwards, so a check can send a logged-out user to the login and stop the action; during
 the page's first render it is an error.
+
+`$request->path` is `/_live` once the browser connected, since that is where the WebSocket goes. The page the
+component is on is `$connection->page`: its path and query as the browser's address shows it
+(`/films?tag[]=action`), for a "sign in and come back" link:
+
+```php
+$login = '/login?next=' . rawurlencode($this->connection->page);
+```
+
+During the page's first render it is the page request's path and query; once connected the browser reports it,
+and again whenever `#[Input(query: ...)]` properties change the address. The browser sends it, so it is input
+like a query parameter: only a path of this site (one leading `/`, no `//`, no backslash, whitespace or control
+characters, at most 2048 bytes) is taken, else it keeps the last one, `/` at first.
 
 `$request->principal` is what the middlewares found when the WebSocket connected, not refreshed until a
 reconnect. Once its `exp` has passed, the next mount or call closes the connection and the browser reconnects.

@@ -68,6 +68,8 @@ final class LiveController
                     // The first message says whether the browser had a circuit before: {"t":"hello","token":"..."|null}
                     $hello = json_decode($message, true);
                     $asked = is_array($hello) && is_string($hello['token'] ?? null) ? $hello['token'] : '';
+                    // And where the browser is: the request here is the WebSocket's, /_live
+                    $page = is_array($hello) && is_string($hello['page'] ?? null) ? $hello['page'] : '/';
                     $circuit = self::unpark($asked);
                     // Someone else, or nobody any more after a logout: the components start over for this user
                     if ($circuit !== null && !$circuit->sameUser($req)) {
@@ -76,10 +78,10 @@ final class LiveController
                     }
                     $resumed = $circuit !== null;
                     $token = $resumed ? $asked : bin2hex(random_bytes(16));
-                    $circuit ??= new Circuit($live, $send, static fn (Throwable $e) => $logger->error('live: ' . $e->getMessage(), ['exception' => $e]), null, $req, $close);
+                    $circuit ??= new Circuit($live, $send, static fn (Throwable $e) => $logger->error('live: ' . $e->getMessage(), ['exception' => $e]), null, $req, $close, $page);
                     $send(json_encode(['t' => 'circuit', 'token' => $token, 'resumed' => $resumed] + ($live->isDev() ? ['boot' => self::$boot ??= bin2hex(random_bytes(8)), 'reload' => $live->reloaded(), 'editor' => $live->editor()] : []), JSON_THROW_ON_ERROR));
                     if ($resumed) {
-                        $circuit->reattach($send, $req, $close);
+                        $circuit->reattach($send, $req, $close, $page);
                     }
                 }
             } finally {

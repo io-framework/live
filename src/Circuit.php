@@ -85,14 +85,22 @@ final class Circuit
      * @param (Closure(float, Closure(): void): (Closure(): void))|null $every Starts a timer and returns its cancel; Tenma's setInterval by default.
      * @param Request|null $request The request the connection came in with; components reach it through Connection.
      * @param (Closure(): void)|null $close Closes the connection, so that the browser connects again
+     * @param string|null $page The page the browser is on, as it reported it; null for $request's own
      */
-    public function __construct(private LivePlugin $live, private Closure $send, private Closure $report, ?Closure $every = null, ?Request $request = null, ?Closure $close = null)
-    {
+    public function __construct(
+        private LivePlugin $live,
+        private Closure $send,
+        private Closure $report,
+        ?Closure $every = null,
+        ?Request $request = null,
+        ?Closure $close = null,
+        ?string $page = null,
+    ) {
         $this->close = $close ?? static fn () => null;
         $this->context = FiberLocal::capture();
         $this->services = $live->scope();
         $this->objects = new WeakMap();
-        $this->connection = new Connection($request ?? Request::fromParts('GET', '/'));
+        $this->connection = new Connection($request ?? Request::fromParts('GET', '/'), $page);
         $this->services->put($this->connection);
         $this->every = $every ?? static fn (float $seconds, Closure $work): Closure => \Threading\Timer::every($seconds, $work)->cancel(...);
         $this->broadcast = $this->services->get(Broadcast::class);
@@ -157,6 +165,11 @@ final class Circuit
     private function receive(string $message): void
     {
         $msg = json_decode($message, true);
+        // The browser wrote changed #[Input(query: ...)] properties into its address: {"t":"page","page":"/s?q=x"}
+        if (is_array($msg) && ($msg['t'] ?? null) === 'page') {
+            $this->connection->moved($msg['page'] ?? null);
+            return;
+        }
         $id = is_array($msg) ? ($msg['id'] ?? null) : null;
         if (!is_array($msg) || !is_string($id)) {
             return;
@@ -388,8 +401,9 @@ final class Circuit
      *
      * @param Closure(string): void $send
      * @param (Closure(): void)|null $close Closes the new connection
+     * @param string|null $page The page the browser is on, as it reported it
      */
-    public function reattach(Closure $send, ?Request $request = null, ?Closure $close = null): void
+    public function reattach(Closure $send, ?Request $request = null, ?Closure $close = null, ?string $page = null): void
     {
         // Called by the new connection, with its request's values
         $this->context = FiberLocal::capture();
@@ -397,7 +411,7 @@ final class Circuit
         $this->close = $close ?? $this->close;
         $this->broadcast->connect($this);
         if ($request !== null) {
-            $this->connection->reconnected($request);
+            $this->connection->reconnected($request, $page);
         }
         foreach ($this->nodes as $node) {
             $this->startTimers($node);

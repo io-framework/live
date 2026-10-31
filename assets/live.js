@@ -36,7 +36,9 @@
 
     const connect = () => {
         socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/_live`);
-        socket.onopen = () => socket.send(JSON.stringify({ t: 'hello', token }));
+        // Where the page is: the server's Connection::$page, for links back to it
+        const page = () => location.pathname + location.search;
+        socket.onopen = () => socket.send(JSON.stringify({ t: 'hello', token, page: page() }));
         socket.onmessage = (event) => {
             const message = JSON.parse(event.data);
             // An action sent the browser elsewhere: a path on this site, the server made sure
@@ -56,6 +58,7 @@
                     else url.searchParams.set(key, typeof value === 'boolean' ? (value ? '1' : '0') : String(value));
                 }
                 history.replaceState(history.state, '', url);
+                send({ t: 'page', page: page() });
                 const root = document.querySelector(`[data-live-id="${CSS.escape(message.id)}"]`);
                 if (root) {
                     const inputs = JSON.parse(root.dataset.inputs || '{}');

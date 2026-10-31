@@ -5,7 +5,10 @@ namespace Io\Live;
 use InvalidArgumentException;
 use ReflectionClass;
 use ReflectionMethod;
+use ReflectionNamedType;
 use ReflectionProperty;
+use ReflectionType;
+use ReflectionUnionType;
 use Throwable;
 use Io\Container;
 use Io\Environment;
@@ -289,9 +292,14 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
             if ($query === null || $query === false) {
                 continue;
             }
-            $value = $request->query($query === true ? $property->getName() : $query);
+            $key = $query === true ? $property->getName() : $query;
+            $value = $request->query($key);
             if ($value === null) {
                 continue;
+            }
+            // A list takes ?tag=a as ['a'] and ?tag[]=a&tag[]=b as both, texts only
+            if (self::isList($property->getType())) {
+                $value = $request->strings($key);
             }
             [$fits, $converted] = Hydrator::fitting($property->getType(), $value);
             if ($fits) {
@@ -299,6 +307,18 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
             }
         }
         return $inputs;
+    }
+
+    /** Whether $type takes an array: `array`, `?array` or a union with it */
+    private static function isList(?ReflectionType $type): bool
+    {
+        $types = $type instanceof ReflectionUnionType ? $type->getTypes() : [$type];
+        foreach ($types as $one) {
+            if ($one instanceof ReflectionNamedType && $one->getName() === 'array') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -688,6 +688,43 @@ final class CircuitTest extends TestCase
         $this->assertStringContainsString('<p>cy</p>', Circuit::page($this->plugin(), 'test-visitor', [], '', Request::fromParts('GET', '/', cookies: ['who' => 'cy'])));
     }
 
+    public function testAComponentKnowsThePageTheBrowserIsOnNotTheWebSocketsPath(): void
+    {
+        $page = Circuit::page($this->plugin(), 'test-visitor', [], '', Request::fromParts('GET', '/films?tag=action'));
+        $this->assertStringContainsString('<i>/films?tag=action</i>', $page);
+
+        // Connected: the browser says where it is; the request is the WebSocket's
+        $circuit = new Circuit(
+            $this->plugin(),
+            function (string $message): void {
+                $this->sent[] = json_decode($message, true);
+            },
+            static fn () => null,
+            static fn (): Closure => static fn () => null,
+            Request::fromParts('GET', '/_live'),
+            null,
+            '/films?tag[]=action',
+        );
+        $connection = $circuit->services()->get(\Io\Live\Connection::class);
+        $this->assertSame('/films?tag[]=action', $connection->page);
+
+        // The address changed with a query input
+        $circuit->handle($this->message(['t' => 'page', 'page' => '/films?tag[]=drama']));
+        $this->assertSame('/films?tag[]=drama', $connection->page);
+
+        // Never another site, nothing odd, nothing huge: the last good one stays
+        $bad = ['//evil.test', 'https://evil.test', '/\\evil.test', "/\t/evil.test", "/a\nb", 'films', '', '/' . str_repeat('a', 2048), 42];
+        foreach ($bad as $page) {
+            $circuit->handle($this->message(['t' => 'page', 'page' => $page]));
+            $this->assertSame('/films?tag[]=drama', $connection->page, json_encode($page) ?: '');
+        }
+        $this->assertSame([], $this->sent);
+
+        // A reconnect brings the page of the new connection
+        $circuit->reattach(static fn () => null, Request::fromParts('GET', '/_live'), null, '/films');
+        $this->assertSame('/films', $connection->page);
+    }
+
     public function testAnotherPluginAddsItsComponentsAtBoot(): void
     {
         $live = new LivePlugin([Counter::class]);

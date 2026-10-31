@@ -84,6 +84,26 @@ final class TabTest extends TestCase
         $tab->assertQuery(['q' => 'pretzel', 'p' => null]);
     }
 
+    public function testAListQueryInputTakesOneValueOrSeveral(): void
+    {
+        $page = fn (string $uri): string => Tab::page($this->app, 'test-searcher', [], \Io\Http\Request::fromParts('GET', $uri));
+
+        $this->assertStringContainsString('<p>tags: action</p>', $page('/s?tag=action'));
+        $this->assertStringContainsString('<p>tags: action,drama</p>', $page('/s?tag[]=action&tag[]=drama'));
+        // Only texts: a nested list is left out
+        $this->assertStringContainsString('<p>tags: action</p>', $page('/s?tag[]=action&tag[x][]=drama'));
+        $this->assertStringContainsString('<p>tags: </p>', $page('/s'));
+    }
+
+    public function testAChangedListQueryInputGoesIntoTheAddressAsAList(): void
+    {
+        $tab = Tab::for($this->app);
+        $searcher = $tab->mount('test-searcher', ['tags' => ['action']]);
+
+        $searcher->click('tag');
+        $tab->assertQuery(['tag' => ['action', 'drama']]);
+    }
+
     public function testAClickTogglesAConditionalClass(): void
     {
         $board = Tab::for($this->app)->mount('test-board');
