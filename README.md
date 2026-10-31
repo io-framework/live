@@ -284,9 +284,11 @@ done, for example after an order was placed. Only a path of the site is a destin
 if the action throws afterwards, so a check can send a logged-out user to the login and stop the action; during
 the page's first render it is an error.
 
-`$request->jwt` is what the middlewares found when the WebSocket connected, not refreshed until a reconnect.
-Once its `exp` has passed, the next mount or call closes the connection and the browser reconnects; a
-component that must notice a logout or a revoked token right away asks its source again on every action.
+`$request->principal` is what the middlewares found when the WebSocket connected, not refreshed until a
+reconnect. Once its `exp` has passed, the next mount or call closes the connection and the browser reconnects.
+A principal with a `sid` claim (a session of io/auth) also closes its connections as soon as Io's `SignOuts`
+announces that sign-in ended (a sign-out, a new password, a disabled user). A plain JWT can't be ended early: a
+component that must notice a revoked token right away asks its source again on every action.
 Every render of a tab, from a message, a timer or a broadcast, runs with the `FiberLocal` values of its
 connection's request: the locale and the request id are the tab's own.
 

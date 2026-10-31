@@ -7,7 +7,7 @@ use Io\Http\Request;
 
 /**
  * The browser connection of a circuit, for a component or a #[Scoped] service that injects it: the request the
- * WebSocket came in with (its cookies, and $request->jwt as the app's middlewares left it), and a way to send
+ * WebSocket came in with (its cookies, and $request->principal as the app's middlewares left it), and a way to send
  * the browser to another page. After a reconnect, $request is the new connection's.
  */
 #[Scoped]

@@ -56,6 +56,9 @@ final class LiveController
             };
             $circuit = null;
             $token = '';
+            $close = static fn () => $socket->close();
+            // A sign-out elsewhere closes it at once, not only once its principal's exp has passed
+            Connections::opened($req->principal, spl_object_id($socket), $close);
             try {
                 while (($message = $socket->receive()) !== null) {
                     if ($circuit !== null) {
@@ -73,7 +76,6 @@ final class LiveController
                     }
                     $resumed = $circuit !== null;
                     $token = $resumed ? $asked : bin2hex(random_bytes(16));
-                    $close = static fn () => $socket->close();
                     $circuit ??= new Circuit($live, $send, static fn (Throwable $e) => $logger->error('live: ' . $e->getMessage(), ['exception' => $e]), null, $req, $close);
                     $send(json_encode(['t' => 'circuit', 'token' => $token, 'resumed' => $resumed] + ($live->isDev() ? ['boot' => self::$boot ??= bin2hex(random_bytes(8)), 'reload' => $live->reloaded(), 'editor' => $live->editor()] : []), JSON_THROW_ON_ERROR));
                     if ($resumed) {
@@ -81,6 +83,7 @@ final class LiveController
                     }
                 }
             } finally {
+                Connections::closed($req->principal, spl_object_id($socket));
                 // A circuit without components has nothing to come back to, and must not push real ones out
                 if ($circuit !== null && !$circuit->isEmpty()) {
                     self::park($token, $circuit, self::client($req));
@@ -131,7 +134,7 @@ final class LiveController
     /** Whose circuit it is: the signed-in user, or else the address it came from */
     private static function client(Request $req): string
     {
-        $subject = $req->jwt['sub'] ?? null;
+        $subject = $req->principal['sub'] ?? null;
         if ($subject !== null) {
             return 'sub:' . json_encode($subject, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
         }

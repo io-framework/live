@@ -303,7 +303,7 @@ final class Circuit
     }
 
     /**
-     * Whether $request belongs to the user this circuit was opened for: $request->jwt's sub, as Io keeps it. Without
+     * Whether $request belongs to the user this circuit was opened for: $request->principal's sub, as Io keeps it. Without
      * one (anonymous visitors, a login by session cookie) the same cookies, which the tab's #[Scoped] services were
      * built from.
      */
@@ -319,7 +319,7 @@ final class Circuit
      */
     private function closedIfExpired(): bool
     {
-        $exp = $this->connection->request->jwt['exp'] ?? null;
+        $exp = $this->connection->request->principal['exp'] ?? null;
         if (!(is_int($exp) || is_float($exp)) || $exp > time()) {
             return false;
         }
@@ -330,7 +330,7 @@ final class Circuit
 
     private static function user(Request $request): string
     {
-        $subject = $request->jwt['sub'] ?? null;
+        $subject = $request->principal['sub'] ?? null;
         if ($subject !== null) {
             return 'sub:' . json_encode($subject, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
         }

@@ -856,7 +856,7 @@ final class CircuitTest extends TestCase
             $closed++;
         });
         $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-counter', 'p' => ['count' => 1]]));
-        $request->jwt['exp'] = time() - 1;
+        $request->principal['exp'] = time() - 1;
         $this->sent = [];
         $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => 'add', 'a' => ['1']]));
         $circuit->handle($this->message(['t' => 'mount', 'id' => 'c1', 'c' => 'test-counter', 'p' => []]));
@@ -897,7 +897,7 @@ final class CircuitTest extends TestCase
 
         // Signed out since: neither the timer nor a broadcast reaches the tab, the connection closes
         $request = $admin->services()->get(\Io\Live\Connection::class)->request;
-        $request->jwt['exp'] = time() - 1;
+        $request->principal['exp'] = time() - 1;
         $this->sent = [];
         ($this->timers[0][1])();
         $admin->changed(false, 'broadcast');
