@@ -86,6 +86,7 @@ final class Circuit
      * @param Request|null $request The request the connection came in with; components reach it through Connection.
      * @param (Closure(): void)|null $close Closes the connection, so that the browser connects again
      * @param string|null $page The page the browser is on, as it reported it; null for $request's own
+     * @param bool $connected Whether a browser is on the other end; a page's first render has none, and no broadcast to hear
      */
     public function __construct(
         private LivePlugin $live,
@@ -95,6 +96,7 @@ final class Circuit
         ?Request $request = null,
         ?Closure $close = null,
         ?string $page = null,
+        bool $connected = true,
     ) {
         $this->close = $close ?? static fn () => null;
         $this->context = FiberLocal::capture();
@@ -104,7 +106,9 @@ final class Circuit
         $this->services->put($this->connection);
         $this->every = $every ?? static fn (float $seconds, Closure $work): Closure => \Threading\Timer::every($seconds, $work)->cancel(...);
         $this->broadcast = $this->services->get(Broadcast::class);
-        $this->broadcast->connect($this);
+        if ($connected) {
+            $this->broadcast->connect($this);
+        }
     }
 
     /**
@@ -127,7 +131,7 @@ final class Circuit
             $inputs += $live->queryInputs($selector, $request);
         }
         $none = static fn () => null;
-        $circuit = new self($live, $none, $none, static fn (): Closure => $none, $request);
+        $circuit = new self($live, $none, $none, static fn (): Closure => $none, $request, connected: false);
         [$component, $template] = $live->create($selector, $inputs, $circuit->services);
         $html = $circuit->html($circuit->node('', $selector, $component, $template, null));
         if ($circuit->connection->takeNavigation() !== null) {

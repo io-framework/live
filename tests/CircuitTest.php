@@ -867,6 +867,14 @@ final class CircuitTest extends TestCase
     }
 
     #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
+    public function testAPageRenderSubscribesToNothing(): void
+    {
+        self::fakeTenma();
+        Circuit::page($this->plugin(), 'test-chat', []);
+        $this->assertSame([], \FakeTenma::$subscriptions);
+    }
+
+    #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
     public function testTabsStillHearBroadcastsAfterTheFirstTabClosed(): void
     {
         self::fakeTenma();
