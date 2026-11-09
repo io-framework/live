@@ -892,6 +892,38 @@ final class CircuitTest extends TestCase
         $this->assertCount(1, \FakeTenma::$subscriptions);
     }
 
+    public function testABrowserBackBeforeTheServerNoticedTakesItsCircuitOver(): void
+    {
+        $takeOver = new \ReflectionMethod(LiveController::class, 'takeOver');
+        $release = new \ReflectionMethod(LiveController::class, 'release');
+        $attached = new \ReflectionProperty(LiveController::class, 'attached');
+        $signedIn = Request::fromParts('GET', '/');
+        $signedIn->principal = ['sub' => 7];
+        $stranger = Request::fromParts('GET', '/');
+        $stranger->principal = ['sub' => 8];
+        $circuit = $this->circuit($signedIn);
+        $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-counter', 'p' => []]));
+        $closed = 0;
+        $attached->setValue(null, ['token' => [$circuit, 11, static function () use (&$closed): void {
+            $closed++;
+        }]]);
+
+        // Someone else with the token gets nothing and closes nothing
+        $this->assertNull($takeOver->invoke(null, 'token', $stranger));
+        $this->assertSame(0, $closed);
+
+        // The owner gets the circuit with its state; its timers stop until reattach()
+        $this->assertSame($circuit, $takeOver->invoke(null, 'token', $signedIn));
+        $this->assertSame(1, $closed);
+        $this->assertSame([], array_filter($this->timers, static fn (array $timer) => !$timer[2]));
+
+        // The new connection holds it now: the old one, ending later, leaves it alone
+        $attached->setValue(null, ['token' => [$circuit, 12, static fn () => null]]);
+        $this->assertFalse($release->invoke(null, 'token', 11));
+        $this->assertTrue($release->invoke(null, 'token', 12));
+        $this->assertSame([], $attached->getValue());
+    }
+
     #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
     public function testAPageRenderSubscribesToNothing(): void
     {

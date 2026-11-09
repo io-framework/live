@@ -28,6 +28,12 @@ final class LiveController
      */
     private static array $parked = [];
 
+    /**
+     * @var array<string, array{Circuit, int, \Closure(): void}> Circuits with a connection, by token: the socket and
+     * how to close it. A browser can notice a dropped connection before the server does.
+     */
+    private static array $attached = [];
+
     /** This process, in dev: the browser sees a new one after a restart (--watch) and loads the page again. */
     private static ?string $boot = null;
 
@@ -70,7 +76,7 @@ final class LiveController
                     $asked = is_array($hello) && is_string($hello['token'] ?? null) ? $hello['token'] : '';
                     // And where the browser is: the request here is the WebSocket's, /_live
                     $page = is_array($hello) && is_string($hello['page'] ?? null) ? $hello['page'] : '/';
-                    $circuit = self::unpark($asked);
+                    $circuit = self::unpark($asked) ?? self::takeOver($asked, $req);
                     // Someone else, or nobody any more after a logout: the components start over for this user
                     if ($circuit !== null && !$circuit->sameUser($req)) {
                         $circuit->close();
@@ -79,6 +85,7 @@ final class LiveController
                     $resumed = $circuit !== null;
                     $token = $resumed ? $asked : bin2hex(random_bytes(16));
                     $circuit ??= new Circuit($live, $send, static fn (Throwable $e) => $logger->error('live: ' . $e->getMessage(), ['exception' => $e]), null, $req, $close, $page);
+                    self::$attached[$token] = [$circuit, spl_object_id($socket), $close];
                     $send(json_encode(['t' => 'circuit', 'token' => $token, 'resumed' => $resumed] + ($live->isDev() ? ['boot' => self::$boot ??= bin2hex(random_bytes(8)), 'reload' => $live->reloaded(), 'editor' => $live->editor()] : []), JSON_THROW_ON_ERROR));
                     if ($resumed) {
                         $circuit->reattach($send, $req, $close, $page);
@@ -86,14 +93,45 @@ final class LiveController
                 }
             } finally {
                 Connections::closed($req->principal, spl_object_id($socket));
-                // A circuit without components has nothing to come back to, and must not push real ones out
-                if ($circuit !== null && !$circuit->isEmpty()) {
-                    self::park($token, $circuit, self::client($req));
-                } else {
-                    $circuit?->close();
+                if (self::release($token, spl_object_id($socket))) {
+                    // A circuit without components has nothing to come back to, and must not push real ones out
+                    if ($circuit !== null && !$circuit->isEmpty()) {
+                        self::park($token, $circuit, self::client($req));
+                    } else {
+                        $circuit?->close();
+                    }
                 }
             }
         }));
+    }
+
+    /**
+     * The browser came back while its circuit still hangs on the old connection: the circuit moves over, and the old
+     * connection is closed. Only for the same user, whose connection this is; anyone else starts over and leaves it alone.
+     */
+    private static function takeOver(string $token, Request $req): ?Circuit
+    {
+        [$circuit, , $close] = self::$attached[$token] ?? [null, null, null];
+        if ($circuit === null || $close === null || !$circuit->sameUser($req)) {
+            return null;
+        }
+        unset(self::$attached[$token]);
+        $circuit->detach();
+        $close();
+        return $circuit;
+    }
+
+    /** The connection ended; false when its circuit has moved on to a newer one, which it then is not to touch. */
+    private static function release(string $token, int $socket): bool
+    {
+        if (!isset(self::$attached[$token])) {
+            return $token === '';
+        }
+        if (self::$attached[$token][1] !== $socket) {
+            return false;
+        }
+        unset(self::$attached[$token]);
+        return true;
     }
 
     /**
