@@ -509,7 +509,7 @@ final class Circuit
             // Only what the template wires up: a public method elsewhere in the class stays out of reach
             throw new InvalidArgumentException("'$method' is no method the template names");
         } else {
-            // Not in the last two renders: a button an @if left out, or one from a render that is gone (the browser
+            // Not in the last two renders sent: a button an @if left out, or one from a render that is gone (the browser
             // has the newer one or gets it, the click was on what changed)
             return;
         }
@@ -848,8 +848,18 @@ final class Circuit
             // In dev the browser keeps the state, for a reload of PHP
             $message = json_encode(['id' => $node->id, 'html' => $html] + ($this->live->isDev() ? ['state' => self::seal($this->states($node))] : []), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
             ($this->send)($message);
+            self::sentCalls($node);
         }
         $this->renders[] = [$node->id, $node->selector, round((hrtime(true) - $started) / 1e6, 2), $message === null ? null : strlen($message)];
+    }
+
+    /** A render went to the browser: the calls of the one before are what a click on its way may still name. */
+    private static function sentCalls(Node $node): void
+    {
+        $node->lastCalls = $node->priorCalls;
+        foreach ($node->children as $child) {
+            self::sentCalls($child);
+        }
     }
 
     /** The node's template, with its children's tags rendered; children no longer placed are removed. */
@@ -858,7 +868,7 @@ final class Circuit
         $node->template = $this->live->template($node->selector) ?? $node->template;
         $positions = [];
         $placed = [];
-        $node->lastCalls = $node->calls;
+        $node->priorCalls = $node->calls;
         $node->calls = [];
         // The same method with the same values and objects gets the same ID in every render: a list that is
         // reordered keeps its IDs, an item that is gone takes its ID along
@@ -867,7 +877,7 @@ final class Circuit
             $node->calls[$id] = [$method, array_values($args ?? [])];
             return $id;
         };
-        $html = $node->template->render($node->component, function (string $selector, array $inputs) use ($node, &$positions, &$placed): string {
+        $child = function (string $selector, array $inputs) use ($node, &$positions, &$placed): string {
             $key = $inputs['key'] ?? null;
             unset($inputs['key']);
             if ($key !== null && !is_scalar($key)) {
@@ -893,7 +903,14 @@ final class Circuit
             }
             $child->inputs = $inputs;
             return sprintf('<%1$s data-live data-live-id="%2$s">%3$s</%1$s>', $selector, htmlspecialchars($child->id, ENT_QUOTES), $this->html($child));
-        }, $action, $this->live->helper(...), fn (string $view, mixed $model = null): Html => $this->live->include($view, $model, $this->connection->request));
+        };
+        try {
+            $html = $node->template->render($node->component, $child, $action, $this->live->helper(...), fn (string $view, mixed $model = null): Html => $this->live->include($view, $model, $this->connection->request));
+        } catch (Throwable $e) {
+            // The browser still shows the last good render: its buttons stay
+            $node->calls = $node->priorCalls;
+            throw $e;
+        }
         foreach (array_diff_key($node->children, $placed) as $key => $gone) {
             $this->remove($gone);
             unset($node->children[$key]);
@@ -904,8 +921,10 @@ final class Circuit
     /**
      * Values by value. An enum case, or an object that cannot change (a readonly class, or one whose properties are
      * all readonly), by its class and its properties: the same row built again by the next render is the same.
-     * Any other object by a number the circuit never gives again: PHP reuses an object's spl_object_id once it is
-     * freed, and a late click on a removed item would hit the item that got its id.
+     * An object of a class with a public int or string `id`, by its class and that id: a row loaded again is the
+     * same row, and the call gets the newest one. Any other object by a number the circuit never gives again: PHP
+     * reuses an object's spl_object_id once it is freed, and a late click on a removed item would hit the item that
+     * got its id.
      *
      * @param array<int, true> $inside The objects whose properties are being read, by spl_object_id: against a cycle
      */
@@ -917,7 +936,11 @@ final class Circuit
         if (is_object($value)) {
             $properties = isset($inside[spl_object_id($value)]) ? null : self::immutable($value);
             if ($properties === null) {
-                return 'o' . ($this->objects[$value] ??= $this->nextObject++) . ';';
+                // A stdClass has no class to tell an article from a comment with the same id
+                $key = $value instanceof \stdClass ? null : (get_object_vars($value)['id'] ?? null);
+                return is_int($key) || is_string($key)
+                    ? 'k' . serialize($value::class) . serialize($key)
+                    : 'o' . ($this->objects[$value] ??= $this->nextObject++) . ';';
             }
             return 'v' . serialize($value::class) . $this->identity($properties, $inside + [spl_object_id($value) => true]);
         }

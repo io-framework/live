@@ -61,7 +61,7 @@ final class CircuitTest extends TestCase
 
     private function plugin(bool $dev = false): LivePlugin
     {
-        $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class, \Io\Live\Tests\Fixtures\Safe::class, \Io\Live\Tests\Fixtures\Thread::class]);
+        $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class, \Io\Live\Tests\Fixtures\Safe::class, \Io\Live\Tests\Fixtures\Thread::class, \Io\Live\Tests\Fixtures\Stock::class]);
         $container = new Container();
         $container->set(new Label('fine'));
         $container->set(new Room());
@@ -631,6 +631,32 @@ final class CircuitTest extends TestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage(Tally::class . ' injects #[Scoped] ' . \Io\Live\Tests\Fixtures\Basket::class);
         $this->plugin()->scope()->get(Tally::class);
+    }
+
+    public function testRowsLoadedAgainKeepTheirCallsAndAClickSurvivesRendersThatChangeNothing(): void
+    {
+        $live = $this->plugin();
+        $circuit = $this->circuit(live: $live);
+        $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-stock', 'p' => []]));
+        preg_match_all('/data-on-click="(remove~\w+)"/', $this->sent[0]['html'], $ids);
+        [$tea, $coffee] = $ids[1];
+        $this->sent = [];
+
+        // Every render loads new objects, and nothing visible changed
+        foreach (range(1, 3) as $_) {
+            $live->scope()->get(\Io\Live\Broadcast::class)->changed();
+        }
+        $this->assertSame([], $this->sent);
+
+        // A click on the HTML the browser has still counts, and so does one on the render sent before that
+        $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => $tea, 'a' => []]));
+        $this->assertStringNotContainsString('tea', $this->sent[0]['html']);
+        foreach (range(1, 3) as $_) {
+            $live->scope()->get(\Io\Live\Broadcast::class)->changed();
+        }
+        $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => $coffee, 'a' => []]));
+        $this->assertStringNotContainsString('coffee', $this->sent[1]['html']);
+        $this->assertSame([], $this->reported);
     }
 
     public function testABroadcastRendersEveryConnectedTab(): void

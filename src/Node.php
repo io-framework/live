@@ -22,8 +22,11 @@ final class Node
      */
     public array $calls = [];
 
-    /** @var array<string, array{string, list<mixed>}> Those of the render before: a click may still be on its way. */
+    /** @var array<string, array{string, list<mixed>}> Those of the render sent before: a click may still be on its way. */
     public array $lastCalls = [];
+
+    /** @var array<string, array{string, list<mixed>}> Those of the render before the last one, sent or not. */
+    public array $priorCalls = [];
 
     /** Where it is in its tab: the top-level ID, then each child's selector and key (`c0/app-row=Berlin`) */
     public string $path = '';
