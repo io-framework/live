@@ -61,7 +61,7 @@ final class CircuitTest extends TestCase
 
     private function plugin(bool $dev = false): LivePlugin
     {
-        $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class, \Io\Live\Tests\Fixtures\Safe::class, \Io\Live\Tests\Fixtures\Thread::class, \Io\Live\Tests\Fixtures\Stock::class]);
+        $live = new LivePlugin([Counter::class, ItemList::class, Item::class, BasketButton::class, BasketBadge::class, Fragile::class, Uploader::class, Visitor::class, Bouncer::class, Chat::class, Shop::class, Ticker::class, \Io\Live\Tests\Fixtures\Gauge::class, \Io\Live\Tests\Fixtures\Palette::class, \Io\Live\Tests\Fixtures\Order::class, \Io\Live\Tests\Fixtures\Greeting::class, \Io\Live\Tests\Fixtures\Safe::class, \Io\Live\Tests\Fixtures\Thread::class, \Io\Live\Tests\Fixtures\Stock::class, \Io\Live\Tests\Fixtures\Slow::class]);
         $container = new Container();
         $container->set(new Label('fine'));
         $container->set(new Room());
@@ -657,6 +657,81 @@ final class CircuitTest extends TestCase
         $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => $coffee, 'a' => []]));
         $this->assertStringNotContainsString('coffee', $this->sent[1]['html']);
         $this->assertSame([], $this->reported);
+    }
+
+    /** A tab with test-slow mounted, and $work run until the component's first wait: resume the fiber to go on */
+    private function waitingIn(Circuit $circuit, Closure $work): \Fiber
+    {
+        \Io\Live\Tests\Fixtures\Slow::$waits = true;
+        $fiber = new \Fiber($work);
+        $fiber->start();
+        $this->assertTrue($fiber->isSuspended());
+        return $fiber;
+    }
+
+    /** Lets a waiting fiber run to its end, the work that piled up behind it included */
+    private function finish(\Fiber $fiber): void
+    {
+        \Io\Live\Tests\Fixtures\Slow::$waits = false;
+        $fiber->resume();
+        $this->assertTrue($fiber->isTerminated());
+    }
+
+    public function testAClickDuringARenderThatWaitsNeverLeavesTheOlderHtmlLast(): void
+    {
+        $circuit = $this->circuit();
+        $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-slow', 'p' => []]));
+        $this->sent = [];
+        $add = $this->message(['t' => 'call', 'id' => 'c0', 'm' => 'add', 'a' => []]);
+        $first = $this->waitingIn($circuit, static fn () => $circuit->handle($add));
+
+        // The second click arrives while the first render waits: it waits too
+        $circuit->handle($add);
+        $this->assertSame([], $this->sent);
+        $this->finish($first);
+
+        $this->assertSame(['add1/2', 'add2/3'], array_map(strip_tags(...), array_column($this->sent, 'html')));
+        $this->assertSame([], $this->reported);
+    }
+
+    public function testATickIsSkippedWhileTheLastOneRunsAndBroadcastsThatWaitBecomeOne(): void
+    {
+        $live = $this->plugin();
+        $circuit = $this->circuit(live: $live);
+        $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-slow', 'p' => []]));
+        $this->sent = [];
+        $tick = $this->timers[0][1];
+        $running = $this->waitingIn($circuit, $tick);
+
+        $tick();
+        $tick();
+        foreach (range(1, 5) as $_) {
+            $live->scope()->get(\Io\Live\Broadcast::class)->changed();
+        }
+        $this->finish($running);
+
+        // The tick's own render, then one for all the broadcasts
+        $this->assertSame(1, $circuit->byId('c0')?->component->ticks);
+        $this->assertSame(['add0/2', 'add0/3'], array_map(strip_tags(...), array_column($this->sent, 'html')));
+    }
+
+    public function testABrowserFloodingABusyTabIsDisconnected(): void
+    {
+        $closed = 0;
+        $circuit = new Circuit($this->plugin(), static fn () => null, static fn () => null, static fn (): Closure => static fn () => null, null, static function () use (&$closed): void {
+            $closed++;
+        });
+        $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-slow', 'p' => []]));
+        $add = $this->message(['t' => 'call', 'id' => 'c0', 'm' => 'add', 'a' => []]);
+        $first = $this->waitingIn($circuit, static fn () => $circuit->handle($add));
+
+        foreach (range(1, 200) as $_) {
+            $circuit->handle($add);
+        }
+        $this->assertSame(0, $closed);
+        $circuit->handle($add);
+        $this->assertSame(1, $closed);
+        $this->finish($first);
     }
 
     public function testABroadcastRendersEveryConnectedTab(): void

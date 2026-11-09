@@ -19,12 +19,16 @@ use Io\Support\FiberLocal;
  * (JSON): `{"t":"mount","id":"c0","c":"app-add-to-cart","p":{...}}` creates a top-level component with its inputs,
  * `{"t":"call","id":"c0.1","m":"add","a":[...]}` calls a method its template wires up, on a top-level
  * component or a child; `"m":"remove~3f0c…"` one the template bound to arguments (`data-on-click="remove($line->product)"`). After a change every top-level component renders; the changed ones go back as `{"id","html"}`;
- * a failure as `{"id","error":true}` without details. The circuit keeps running either way.
+ * a failure as `{"id","error":true}` without details. The circuit keeps running either way. Actions, timers and
+ * broadcasts run one at a time per tab, even when one of them waits on I/O: a render never sends older HTML last.
  */
 final class Circuit
 {
     // ponytail: fixed limit per call; every file costs its content plus an object, an option once a form needs more
     private const MAX_FILES = 20;
+
+    // ponytail: fixed; what a browser may send ahead of a tab that is still busy, an option once one needs more
+    private const MAX_QUEUED = 200;
 
     /** @var array<string, Node> Every component by ID, children included. */
     private array $nodes = [];
@@ -33,6 +37,14 @@ final class Circuit
     private array $queries = [];
 
     private int $roots = 0;
+
+    /** @var list<Closure(): void> What waits for its turn on this tab, oldest first */
+    private array $queue = [];
+
+    private bool $working = false;
+
+    /** @var list<string>|null The topics of the broadcast that waits for its turn, none for every component; null when none waits */
+    private ?array $waitingTopics = null;
 
     /** @var Closure(float, Closure(): void): (Closure(): void) */
     private Closure $every;
@@ -148,7 +160,37 @@ final class Circuit
 
     public function handle(string $message): void
     {
-        $this->within(fn () => $this->receive($message));
+        if (count($this->queue) >= self::MAX_QUEUED) {
+            $this->live->notice('a browser sent more than a busy tab can hold: its connection is closed');
+            ($this->close)();
+            return;
+        }
+        $this->serial(fn () => $this->receive($message));
+    }
+
+    /**
+     * Runs $work once everything before it on this tab is done: timers, broadcasts and the browser's messages run
+     * in fibers of their own, and a render that waits on a query must not send its HTML after a newer one. Whoever
+     * finds the tab free works through what arrived meanwhile, the others return at once.
+     */
+    private function serial(Closure $work): void
+    {
+        $this->queue[] = $work;
+        if ($this->working) {
+            return;
+        }
+        $this->working = true;
+        try {
+            while (($next = array_shift($this->queue)) !== null) {
+                try {
+                    $this->within($next);
+                } catch (Throwable $e) {
+                    ($this->report)($e);
+                }
+            }
+        } finally {
+            $this->working = false;
+        }
     }
 
     /**
@@ -382,6 +424,8 @@ final class Circuit
         // Also what failed to mount: those components never got a node
         $this->live->forget('tab ' . spl_object_id($this));
         $this->detach();
+        $this->queue = [];
+        $this->waitingTopics = null;
         $this->nodes = [];
         $this->roots = 0;
     }
@@ -704,32 +748,60 @@ final class Circuit
     {
         foreach ((new ReflectionObject($node->component))->getMethods() as $method) {
             foreach ($method->getAttributes(Every::class) as $attribute) {
-                $node->timers[] = ($this->every)($attribute->newInstance()->seconds, fn () => $this->within(function () use ($node, $method): void {
-                    if ($this->closedIfExpired()) {
-                        return;
-                    }
-                    // A timer the user may not run as a click is skipped: its #[Role] or #[Permissions] hold for both
-                    try {
-                        $this->live->guard($node->component::class, $method->getName(), $this->connection->request);
-                    } catch (Throwable) {
-                        return;
-                    }
-                    $this->cause = '#[Every] ' . $method->getName();
-                    $this->started = hrtime(true);
-                    // As an action: a failure shows on the component, what changed before it still renders
-                    try {
-                        $method->invoke($node->component);
-                    } catch (Throwable $e) {
-                        $this->failed($node->id, $e, $node->selector);
-                    } finally {
-                        $this->changed();
-                    }
-                    $this->trace();
-                    $this->navigate();
-                    $this->query();
-                }));
+                $node->timers[] = ($this->every)($attribute->newInstance()->seconds, $this->timer($node, $method));
             }
         }
+    }
+
+    /**
+     * The callback of an #[Every] method's timer. A tick is skipped while the last one still waits or runs: the clock
+     * does not wait for a slow method.
+     *
+     * @return Closure(): void
+     */
+    private function timer(Node $node, ReflectionMethod $method): Closure
+    {
+        $busy = false;
+        return function () use (&$busy, $node, $method): void {
+            if ($busy) {
+                return;
+            }
+            $busy = true;
+            $this->serial(function () use (&$busy, $node, $method): void {
+                try {
+                    $this->tick($node, $method);
+                } finally {
+                    $busy = false;
+                }
+            });
+        };
+    }
+
+    private function tick(Node $node, ReflectionMethod $method): void
+    {
+        // It waited for its turn: the component may be gone by now
+        if (($this->nodes[$node->id] ?? null) !== $node || $this->closedIfExpired()) {
+            return;
+        }
+        // A timer the user may not run as a click is skipped: its #[Role] or #[Permissions] hold for both
+        try {
+            $this->live->guard($node->component::class, $method->getName(), $this->connection->request);
+        } catch (Throwable) {
+            return;
+        }
+        $this->cause = '#[Every] ' . $method->getName();
+        $this->started = hrtime(true);
+        // As an action: a failure shows on the component, what changed before it still renders
+        try {
+            $method->invoke($node->component);
+        } catch (Throwable $e) {
+            $this->failed($node->id, $e, $node->selector);
+        } finally {
+            $this->changed();
+        }
+        $this->trace();
+        $this->navigate();
+        $this->query();
     }
 
     /**
@@ -750,12 +822,27 @@ final class Circuit
         if ($this->closedIfExpired()) {
             return;
         }
-        // From outside an action or a timer (a broadcast, a reconnect): with the tab's own request values
-        if ($cause !== null) {
-            $this->within(fn () => $this->renderAll($onlyIfChanged, $cause, $topics));
-        } else {
+        if ($cause === null) {
             $this->renderAll($onlyIfChanged, null, $topics);
+            return;
         }
+        // From outside an action or a timer (a broadcast, a reconnect): in its turn, with the tab's own request
+        // values. A reconnect sends everything, whatever else waits
+        if (!$onlyIfChanged) {
+            $this->serial(fn () => $this->renderAll(false, $cause, $topics));
+            return;
+        }
+        // Broadcasts that wait become one: a tab that is busy or behind holds on to no more than that
+        if ($this->waitingTopics !== null) {
+            $this->waitingTopics = $this->waitingTopics === [] || $topics === [] ? [] : array_values(array_unique([...$this->waitingTopics, ...$topics]));
+            return;
+        }
+        $this->waitingTopics = $topics;
+        $this->serial(function () use ($cause): void {
+            $topics = $this->waitingTopics ?? [];
+            $this->waitingTopics = null;
+            $this->renderAll(true, $cause, $topics);
+        });
     }
 
     /** @param list<string> $topics */
