@@ -290,6 +290,13 @@
         return null;
     };
 
+    // Focused fields the server rendered a value for that they could not take yet
+    const behind = new WeakSet();
+    document.addEventListener('focusout', ({ target }) => {
+        // Typing still on its way brings a render of its own
+        if (behind.delete(target) && !pending.has(target)) target.value = rendered(target).value;
+    });
+
     const update = (old, node) => {
         if (node.nodeType !== Node.ELEMENT_NODE) {
             if (old.nodeValue !== node.nodeValue) old.nodeValue = node.nodeValue;
@@ -304,10 +311,12 @@
         if (before === null) return;
         // A field keeps what the user typed or picked until the server renders a different value. A focused
         // field takes it only if the server had what is in it: a render lagging behind the typing loses nothing.
+        // Otherwise it takes the value when the user leaves it, so a value the server normalised arrives.
         const after = rendered(old);
-        if (after.value !== before.value && (old instanceof HTMLSelectElement || old !== document.activeElement || old.value === before.value)) {
+        if (after.value !== before.value) {
             if (old instanceof HTMLSelectElement) for (const option of old.options) option.selected = option.defaultSelected;
-            else old.value = after.value;
+            else if (old !== document.activeElement || old.value === before.value) old.value = after.value;
+            else behind.add(old);
         }
         if (after.checked !== before.checked) old.checked = after.checked;
     };

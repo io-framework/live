@@ -53,6 +53,13 @@ const $ = (id) => document.getElementById(id);
   server({ id: 'c1', html: b + '<input id="bound" value="abcd"><textarea id="ta">x</textarea><select id="sel"><option>1</option><option selected>2</option></select>' });
   server({ id: 'c1', html: b + '<input id="bound" value=""><textarea id="ta">x</textarea><select id="sel"><option>1</option><option selected>2</option></select>' });
   check('server clears focused field it knew', bound.value === '');
+  // A focused field the server normalised takes the value when the user leaves it
+  bound.value = '0171'; server({ id: 'c1', html: b + '<input id="bound" value="+49 171"><textarea id="ta">x</textarea><select id="sel"><option>1</option><option selected>2</option></select>' });
+  check('focused field keeps typing past a normalised value', bound.value === '0171');
+  $('fb').focus();
+  check('normalised value arrives on leaving the field', bound.value === '+49 171');
+  bound.focus(); bound.value = '';
+  server({ id: 'c1', html: b + '<input id="bound" value=""><textarea id="ta">x</textarea><select id="sel"><option>1</option><option selected>2</option></select>' });
   // textarea and select take a changed server value after user edits
   $('ta').value = 'hi'; $('sel').value = '1'; $('fb').focus();
   server({ id: 'c1', html: b + '<input id="bound" value=""><textarea id="ta"></textarea><select id="sel"><option selected>1</option><option>2</option></select>' });

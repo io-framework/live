@@ -190,7 +190,7 @@ public function type(string $name): void
 }
 ```
 
-Now the server always knows what is in the field, and a new value from the server reaches the field: setting `$this->name = ''` in an action empties it, as does any other value the component computes (a normalised phone number, a suggestion that was picked).
+Now the server always knows what is in the field, and a new value from the server reaches the field: setting `$this->name = ''` in an action empties it, as does any other value the component computes (a normalised phone number, a suggestion that was picked). While the user types in the field, what they typed stays: a value the server changed arrives when they leave it.
 
 A field without binding keeps what was typed after a submit, because the server renders the same `value` as before. To empty the form after a successful submit, either bind its fields, or stop rendering the form and render something else instead, as `Checkout` does once the cart is empty.
 
