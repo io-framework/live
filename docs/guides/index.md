@@ -18,6 +18,7 @@ Building components:
 - [Navigation](navigation.md): sending the browser to another page after an action
 - [Uploads](uploads.md): file inputs and forms with files
 - [Timers, broadcasts and server push](push.md): `#[Every]`, `Broadcast`, several workers
+- [JavaScript](javascript.md): calling the browser's functions with `Js`, and `#[JsInvokable]` methods from the page's scripts
 
 Running and checking:
 

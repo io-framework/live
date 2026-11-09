@@ -98,6 +98,21 @@ A file picked in a data-on-change file input: the method gets it as an UploadedF
 
 **Returns** [`Mounted`](Mounted.md)
 
+### invoke()
+
+```php
+public function invoke(string $method, mixed ...$args): mixed
+```
+
+The page's JavaScript calls a #[JsInvokable] method, as `live.invoke()` does; returns what it returned.
+
+**Parameters**
+
+- `$method` `string`
+- `...$args` `mixed`
+
+**Returns** `mixed`
+
 ### find()
 
 ```php

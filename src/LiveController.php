@@ -21,6 +21,8 @@ final class LiveController
     private const MAX_PARKED = 100;
     /** One client keeps at most this many parked, so it cannot push out everyone else's */
     private const MAX_PARKED_PER_CLIENT = 10;
+    /** Messages read ahead of a tab's running action; with more, reading waits until the action is done */
+    private const MAX_INBOX = 64;
 
     /**
      * @var array<string, array{Circuit, \Threading\Timer, string}> Circuits whose browser may come back, oldest
@@ -63,12 +65,29 @@ final class LiveController
             $circuit = null;
             $token = '';
             $close = static fn () => $socket->close();
+            // Actions run one after the other, in a task: one that waits for the browser's JavaScript must not
+            // keep the answer from being read
+            $inbox = [];
+            $working = null;
             // A sign-out elsewhere closes it at once, not only once its principal's exp has passed
             Connections::opened($req->principal, spl_object_id($socket), $close);
             try {
                 while (($message = $socket->receive()) !== null) {
-                    if ($circuit !== null) {
+                    if ($circuit !== null && Circuit::isAnswer($message)) {
                         $circuit->handle($message);
+                        continue;
+                    }
+                    if ($circuit !== null) {
+                        $inbox[] = $message;
+                        if ($working === null || $working->isDone()) {
+                            $working = \Threading\Task::run(static function () use (&$inbox, $circuit): void {
+                                while (($next = array_shift($inbox)) !== null) {
+                                    $circuit->handle($next);
+                                }
+                            });
+                        } elseif (count($inbox) >= self::MAX_INBOX) {
+                            $working->await();
+                        }
                         continue;
                     }
                     // The first message says whether the browser had a circuit before: {"t":"hello","token":"..."|null}
@@ -93,7 +112,19 @@ final class LiveController
                 }
             } finally {
                 Connections::closed($req->principal, spl_object_id($socket));
-                if (self::release($token, spl_object_id($socket))) {
+                $owner = self::release($token, spl_object_id($socket));
+                // Nothing more runs for this connection. An action that waits for the browser fails and finishes,
+                // while the request still lives: its end would cancel the action wherever it is
+                $inbox = [];
+                if ($owner) {
+                    $circuit?->detach();
+                }
+                try {
+                    $working?->await();
+                } catch (Throwable) {
+                    // Cancelled with the connection; the circuit has reported what went wrong in an action
+                }
+                if ($owner) {
                     // A circuit without components has nothing to come back to, and must not push real ones out
                     if ($circuit !== null && !$circuit->isEmpty()) {
                         self::park($token, $circuit, self::client($req));

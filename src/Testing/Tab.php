@@ -41,8 +41,17 @@ final class Tab
 
     private ?string $navigation = null;
 
+    /** @var array<array-key, mixed> The last answer to live.invoke() */
+    private array $returned = [];
+
     /** @var array<string, mixed> the query values the address shows, by key */
     private array $query = [];
+
+    /** @var array<string, mixed> What the browser's functions return, by path */
+    private array $answers = [];
+
+    /** @var list<array{string, list<mixed>}> The functions the components called, in order */
+    private array $invoked = [];
 
     private function __construct(private readonly LivePlugin $live, ?Request $request)
     {
@@ -98,6 +107,23 @@ final class Tab
         $id = 'c' . $this->mounted++;
         $this->send(['t' => 'mount', 'id' => $id, 'c' => $selector, 'p' => (object) $inputs]);
         return new Mounted($this, $id);
+    }
+
+    /**
+     * What a function returns when a component calls it through Js::invoke(), or the Closure that answers its
+     * arguments; a Closure that throws is a function that fails. Any other function returns null.
+     */
+    public function answer(string $function, mixed $value): self
+    {
+        $this->answers[$function] = $value;
+        return $this;
+    }
+
+    /** That a component called $function through Js, with these arguments. */
+    public function assertInvoked(string $function, mixed ...$args): self
+    {
+        Assert::assertContains([$function, array_values($args)], $this->invoked, 'No such call of JavaScript in this tab');
+        return $this;
     }
 
     /** Lets $seconds pass: the #[Every] timers that are due run, in order. */
@@ -171,7 +197,11 @@ final class Tab
         if (!is_array($message)) {
             return;
         }
-        if (($message['t'] ?? null) === 'navigate' && is_string($message['url'] ?? null)) {
+        if (($message['t'] ?? null) === 'js' && is_string($message['f'] ?? null) && is_array($message['a'] ?? null)) {
+            $this->javascript($message['f'], array_values($message['a']), $message['r'] ?? null);
+        } elseif (($message['t'] ?? null) === 'return') {
+            $this->returned = $message;
+        } elseif (($message['t'] ?? null) === 'navigate' && is_string($message['url'] ?? null)) {
             $this->navigation = $message['url'];
         } elseif (($message['t'] ?? null) === 'query' && is_array($message['q'] ?? null)) {
             foreach ($message['q'] as $key => $value) {
@@ -180,6 +210,36 @@ final class Tab
         } elseif (is_string($message['id'] ?? null) && is_string($message['html'] ?? null)) {
             $this->html[$message['id']] = $message['html'];
         }
+    }
+
+    /**
+     * The function runs, and a call that waits gets its answer as the browser's would come.
+     *
+     * @param list<mixed> $args
+     */
+    private function javascript(string $function, array $args, mixed $id): void
+    {
+        $this->invoked[] = [$function, $args];
+        $answer = ['t' => 'answer', 'r' => $id, 'v' => null];
+        $value = $this->answers[$function] ?? null;
+        try {
+            $answer['v'] = $value instanceof Closure ? $value(...$args) : $value;
+        } catch (Throwable $e) {
+            unset($answer['v']);
+            $answer['e'] = $e->getMessage();
+        }
+        if ($id !== null) {
+            $this->circuit->handle(json_encode($answer, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    /** @internal What a #[JsInvokable] method returned to the last live.invoke() */
+    public function returned(): mixed
+    {
+        if (($this->returned['error'] ?? false) === true) {
+            throw new LogicException('The #[JsInvokable] method failed');
+        }
+        return $this->returned['v'] ?? null;
     }
 
     private function rethrow(): void

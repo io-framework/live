@@ -346,6 +346,46 @@ public function place(CheckoutForm $form): void
 Live actions need no CSRF token: the WebSocket only connects from the site's own pages (its `Origin` is checked),
 so another site never gets to send an action.
 
+
+## JavaScript
+
+Most components need none. For what only the browser has (its storage, a chart library, the clipboard), a
+component or a `#[Scoped]` service injects `Io\Live\Js`, and the page's scripts can call back:
+
+```php
+#[Inject]
+private Js $js;
+
+public function open(): void
+{
+    $theme = $this->js->invoke('localStorage.getItem', 'theme');   // waits for the answer
+    $this->js->invokeVoid('app.chart.draw', $this->points);        // runs after this action's render
+}
+
+#[JsInvokable]
+public function resize(int $width): string
+{
+    $this->width = $width;
+    return "{$width}px";
+}
+```
+
+```js
+const size = await live.invoke(element, 'resize', 640);   // the component around element
+```
+
+`invoke()` throws `JsException` when the function throws, no browser is connected, or no answer came within a
+minute. Only the waiting action stops: the tab's next events wait behind it. During the page's first render no
+browser is connected: `invoke()` throws, `invokeVoid()` is dropped, and the component mounts again once the browser
+connects. `$js->connected` tells which. `live.invoke()` rejects without a connection, and when the method fails or is
+refused, without details.
+
+Both directions cross a trust boundary. What `invoke()` returns is input like a form field. A `#[JsInvokable]` method
+can be called by any browser with any values, whether or not the page's scripts do: only marked methods are
+reachable, the values are converted to the parameters' types, and its `#[Role]` or `#[Permissions]` hold, but which
+record the caller may touch is the method's to check. The function's path runs as it is: never build it from a
+user's input.
+
 ## DOM patch
 
 The client patches each render into the page instead of replacing it. Siblings are matched by key and moved,
@@ -427,7 +467,7 @@ after a logout or for anyone else the components start over. It is never in a UR
   connection's request as for a route. A JWT whose `exp` has passed counts as signed out: the call is refused
   and the connection closed, so the browser reconnects through the middlewares. A rule the attributes cannot
   say (whose record it is) the component checks itself, from its `Connection`.
-- The browser can only call public methods that the template names in a `data-on-*` attribute. Any other
+- The browser can only call public methods that the template names in a `data-on-*` attribute, and `#[JsInvokable]` ones. Any other
   public method stays out of reach, and so does one named only in commented-out markup (`<!-- -->`, `{{/* */}}`).
   A method is reachable only while one of the last two renders showed it, so a button inside an `@if` that
   was false keeps its method out of reach. A method the template calls with arguments (`remove($item)`) is reachable

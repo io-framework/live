@@ -55,6 +55,13 @@ final class Mounted
         return $this->call($this->element('data-on-change', $target), 'data-on-change', [$file]);
     }
 
+    /** The page's JavaScript calls a #[JsInvokable] method, as `live.invoke()` does; returns what it returned. */
+    public function invoke(string $method, mixed ...$args): mixed
+    {
+        $this->tab->send(['t' => 'invoke', 'id' => $this->id, 'm' => $method, 'a' => array_values($args), 'r' => 1]);
+        return $this->tab->returned();
+    }
+
     /** A child placed by this component's template: by its key, or the first of its tag. */
     public function find(string $selector, string|int|null $key = null): self
     {

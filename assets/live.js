@@ -2,6 +2,7 @@
 // over one WebSocket, children placed by templates included. Events go up (data-on-click, -input, -change,
 // -submit), the component's new HTML comes back and is patched into place. After a dropped connection the
 // server hands back the same components for a while. Without the connection the page stays as rendered.
+// JavaScript and the server call each other through the bridge: the server's Js service, live.invoke() here.
 (() => {
     // Top-level components get an ID here; their children carry relative IDs (".0") from the server
     const roots = [...document.querySelectorAll('[data-live]')].filter((el) => !el.parentElement.closest('[data-live]'));
@@ -28,6 +29,9 @@
     const patched = new Map();
     // In dev: the state of every top-level component and its children, to give it back after PHP reloaded
     const states = new Map();
+    // The promises of live.invoke() without an answer, by number
+    const returns = new Map();
+    let lastReturn = 0;
 
     const send = (message) => {
         if (ready) socket.send(JSON.stringify(message));
@@ -81,7 +85,7 @@
                 boot = message.boot ?? null;
                 editor = message.editor ?? null;
                 // In dev: live.inspect('c0') prints what the component holds on the server
-                if (boot) window.live = { inspect: (id) => send({ t: 'inspect', id }) };
+                if (boot) window.live.inspect = (id) => send({ t: 'inspect', id });
                 token = message.token;
                 attempt = 0;
                 // A new circuit (first connection, or the old one expired): the components start from the page's
@@ -116,6 +120,17 @@
                 console.log(`live.inspect('${message.id}')`, message.state ?? 'no such component');
                 return;
             }
+            if (message.t === 'js') {
+                runJs(message);
+                return;
+            }
+            if (message.t === 'return') {
+                const [resolve, reject] = returns.get(message.r) ?? [];
+                returns.delete(message.r);
+                if (message.error) reject?.(new Error('live.invoke: the server refused the call, or the method failed'));
+                else resolve?.(message.v);
+                return;
+            }
             // In dev: a saved template that does not compile, until it does
             if (message.t === 'problem') {
                 overlay.show(message.key, message.error);
@@ -139,9 +154,29 @@
         };
         socket.onclose = () => {
             ready = false;
+            for (const [, reject] of returns.values()) reject(new Error('live.invoke: the connection was lost'));
+            returns.clear();
             document.documentElement.setAttribute('data-live-offline', '');
             setTimeout(connect, Math.min(1000 * 2 ** attempt++, 30000));
         };
+    };
+
+    // The server calls a function on window by its path. With a number it waits for what comes back: a promise's
+    // value, or what the function threw. Anything JSON can't carry counts as thrown.
+    const runJs = async ({ f, a, r }) => {
+        let answer;
+        try {
+            const path = f.split('.');
+            const name = path.pop();
+            const owner = path.reduce((object, key) => object?.[key], window);
+            if (typeof owner?.[name] !== 'function') throw new Error(`${f} is not a function`);
+            answer = { v: (await owner[name](...a)) ?? null };
+            JSON.stringify(answer);
+        } catch (error) {
+            if (r === undefined) console.error(`live: ${f}()`, error);
+            answer = { e: String(error?.message ?? error) };
+        }
+        if (r !== undefined) send({ t: 'answer', r, ...answer });
     };
 
     // Events go out in the order they happened, even when one first has to read a file: each takes its place
@@ -180,6 +215,24 @@
     const call = (el, attribute, args) => {
         flush();
         enqueue(el, attribute, args);
+    };
+
+    // The page's scripts call a #[JsInvokable] method of the component around an element, after what was typed and
+    // clicked before, and get a promise of what it returned. Without a connection it is rejected: it waits for no
+    // later moment, the page may have moved on by then.
+    window.live = {
+        invoke: (el, method, ...args) => new Promise((resolve, reject) => {
+            const id = el.closest('[data-live]')?.dataset.liveId;
+            if (!id) throw new Error('live.invoke: the element is in no component');
+            if (!ready) throw new Error('live.invoke: not connected');
+            flush();
+            const r = ++lastReturn;
+            returns.set(r, [resolve, reject]);
+            order = order.then(() => send({ t: 'invoke', id, m: method, a: args, r })).catch((error) => {
+                returns.delete(r);
+                reject(error);
+            });
+        }),
     };
 
     // data-on-click="select" data-arg="Berlin": the method, with an optional string argument

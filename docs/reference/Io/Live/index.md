@@ -17,6 +17,9 @@ generated: true
 - [`Connection`](Connection.md) · final class: The browser connection of a circuit, for a component or a #[Scoped] service that injects it: the request the WebSocket came in with (its cookies, and $request->principal as the app's middlewares left it), and a way to send the browser to another page.
 - [`Every`](Every.md) · final class: Runs the method every $seconds while the browser is connected and pushes a new render afterwards.
 - [`Input`](Input.md) · final class: A public property the page sets when it places the component: `$this->live('app-add-to-cart', ['product' => 3])`.
+- [`Js`](Js.md) · final class: The browser's JavaScript, for a component or a #[Scoped] service that injects it: calls a function on `window` by its path ("localStorage.getItem", "app.chart.draw").
+- [`JsException`](JsException.md) · final class: A function called with Js::invoke() failed in the browser, or no answer came: no connection, or none in time.
+- [`JsInvokable`](JsInvokable.md) · final class: A public method of a component that the page's JavaScript may call: `live.invoke(element, 'method', ...args)`.
 - [`LiveOptions`](LiveOptions.md) · class: Live's options, set with `$app->configure(fn (LiveOptions $live) => $live->editor = '...')`.
 - [`LivePlugin`](LivePlugin.md) · final class: Register with `$app->plugin(new LivePlugin([AddToCart::class, CartBadge::class]))`: classes with a #[Component] attribute, and only these can be created; the browser names them by selector.
 - [`Scoped`](Scoped.md) · final class: One instance per circuit (browser tab) instead of one per app: a cart, a wizard's progress, a tab's filters.

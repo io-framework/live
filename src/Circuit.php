@@ -54,6 +54,8 @@ final class Circuit
 
     private Connection $connection;
 
+    private Js $js;
+
     private Broadcast $broadcast;
 
     /** @var Closure(): void */
@@ -116,6 +118,8 @@ final class Circuit
         $this->objects = new WeakMap();
         $this->connection = new Connection($request ?? Request::fromParts('GET', '/'), $page);
         $this->services->put($this->connection);
+        $this->js = new Js(fn (string $message) => ($this->send)($message));
+        $this->services->put($this->js);
         $this->every = $every ?? static fn (float $seconds, Closure $work): Closure => \Threading\Timer::every($seconds, $work)->cancel(...);
         $this->broadcast = $this->services->get(Broadcast::class);
         if ($connected) {
@@ -144,6 +148,7 @@ final class Circuit
         }
         $none = static fn () => null;
         $circuit = new self($live, $none, $none, static fn (): Closure => $none, $request, connected: false);
+        $circuit->js->connected(false);
         [$component, $template] = $live->create($selector, $inputs, $circuit->services);
         $html = $circuit->html($circuit->node('', $selector, $component, $template, null));
         if ($circuit->connection->takeNavigation() !== null) {
@@ -160,6 +165,11 @@ final class Circuit
 
     public function handle(string $message): void
     {
+        // The browser's answer to an action that waits for it: that action holds the tab until it arrives
+        if (self::isAnswer($message)) {
+            $this->within(fn () => $this->receive($message));
+            return;
+        }
         if (count($this->queue) >= self::MAX_QUEUED) {
             $this->live->notice('a browser sent more than a busy tab can hold: its connection is closed');
             ($this->close)();
@@ -216,6 +226,11 @@ final class Circuit
             $this->connection->moved($msg['page'] ?? null);
             return;
         }
+        // What a function of Js::invoke() returned: {"t":"answer","r":1,"v":...}, or "e" with what it threw
+        if (is_array($msg) && ($msg['t'] ?? null) === 'answer') {
+            $this->js->answered($msg['r'] ?? null, $msg['v'] ?? null, $msg['e'] ?? null);
+            return;
+        }
         $id = is_array($msg) ? ($msg['id'] ?? null) : null;
         if (!is_array($msg) || !is_string($id)) {
             return;
@@ -223,6 +238,7 @@ final class Circuit
         $method = $msg['m'] ?? null;
         $this->cause = match ($msg['t'] ?? null) {
             'call' => 'call "' . (is_string($method) ? strtok($method, '~') : '') . '"',
+            'invoke' => 'invoke "' . (is_string($method) ? $method : '') . '"',
             default => 'mount',
         };
         // In dev the browser's console asks what a component holds: live.inspect('c0')
@@ -240,11 +256,13 @@ final class Circuit
             match ($msg['t'] ?? null) {
                 'mount' => $this->mount($id, $msg['c'] ?? null, $msg['p'] ?? [], $msg['s'] ?? null),
                 'call' => $this->call($id, $method, $msg['a'] ?? []),
+                'invoke' => $this->invoke($id, $method, $msg['a'] ?? [], $msg['r'] ?? null),
                 default => throw new InvalidArgumentException('Unknown message type'),
             };
         } catch (Throwable $e) {
             $this->failed($id, $e, $this->nodes[$id]->selector ?? (is_string($msg['c'] ?? null) ? $msg['c'] : null));
         }
+        $this->js->flush();
         $this->trace();
         $this->navigate();
         $this->query();
@@ -401,6 +419,12 @@ final class Circuit
         return 'cookies:' . hash('sha256', $json);
     }
 
+    /** @internal An answer of the browser's JavaScript, which an action that waits for it can't wait behind */
+    public static function isAnswer(string $message): bool
+    {
+        return str_starts_with($message, '{"t":"answer"');
+    }
+
     /** @internal The tab's #[Scoped] services: Testing\Tab puts its fakes there */
     public function services(): Scope
     {
@@ -440,6 +464,7 @@ final class Circuit
             $node->timers = [];
         }
         $this->send = static fn () => null;
+        $this->js->connected(false);
         $this->broadcast->disconnect($this);
     }
 
@@ -456,6 +481,7 @@ final class Circuit
         // Called by the new connection, with its request's values
         $this->context = FiberLocal::capture();
         $this->send = $send;
+        $this->js->connected(true);
         $this->close = $close ?? $this->close;
         $this->broadcast->connect($this);
         if ($request !== null) {
@@ -579,6 +605,50 @@ final class Circuit
         $this->live->guard($node->component::class, $method, $this->connection->request);
         try {
             $reflection->invokeArgs($node->component, $args);
+        } finally {
+            // A method that throws may have changed something before
+            $this->changed();
+        }
+    }
+
+    /**
+     * The page's JavaScript calls a #[JsInvokable] method, with as many values as it likes, and gets an answer in any
+     * case, once what the method changed is rendered: {"t":"return","r":1,"v":...}, or "error":true without details.
+     */
+    private function invoke(string $id, mixed $method, mixed $args, mixed $return): void
+    {
+        try {
+            $value = $this->invoked($id, $method, $args);
+            $answer = json_encode(['t' => 'return', 'r' => $return, 'v' => $value], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+        } catch (Throwable $e) {
+            ($this->send)(json_encode(['t' => 'return', 'r' => $return, 'error' => true], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+            throw $e;
+        }
+        ($this->send)($answer);
+    }
+
+    private function invoked(string $id, mixed $method, mixed $args): mixed
+    {
+        $node = $this->nodes[$id] ?? throw new InvalidArgumentException("No component '$id'");
+        if (!is_string($method) || !is_array($args) || !array_is_list($args)) {
+            throw new InvalidArgumentException('invoke needs a method and a list of arguments');
+        }
+        // Only what the class marks: every other public method stays out of reach
+        $reflection = method_exists($node->component, $method) ? new ReflectionMethod($node->component, $method) : null;
+        if ($reflection === null || !$reflection->isPublic() || $reflection->isStatic() || $reflection->getAttributes(JsInvokable::class) === []) {
+            throw new InvalidArgumentException("'$method' is no #[JsInvokable] method");
+        }
+        $parameters = $reflection->getParameters();
+        foreach ($args as $i => $arg) {
+            $parameter = $parameters[$i] ?? null;
+            [$fits, $args[$i]] = $parameter === null || $parameter->isVariadic() ? [false, null] : Argument::convert($parameter, $arg);
+            if (!$fits) {
+                throw new InvalidArgumentException("invoke \"$method\": refused a value from the browser for parameter $i");
+            }
+        }
+        $this->live->guard($node->component::class, $method, $this->connection->request);
+        try {
+            return $reflection->invokeArgs($node->component, $args);
         } finally {
             // A method that throws may have changed something before
             $this->changed();
@@ -799,6 +869,7 @@ final class Circuit
         } finally {
             $this->changed();
         }
+        $this->js->flush();
         $this->trace();
         $this->navigate();
         $this->query();
@@ -870,6 +941,7 @@ final class Circuit
             }
         }
         if ($cause !== null) {
+            $this->js->flush();
             $this->trace();
         }
     }

@@ -90,6 +90,37 @@ Places a top-level component as the browser does when it connects, and renders i
 
 **Returns** [`Mounted`](Mounted.md)
 
+### answer()
+
+```php
+public function answer(string $function, mixed $value): \Io\Live\Testing\Tab
+```
+
+What a function returns when a component calls it through Js::invoke(), or the Closure that answers its
+arguments; a Closure that throws is a function that fails. Any other function returns null.
+
+**Parameters**
+
+- `$function` `string`
+- `$value` `mixed`
+
+**Returns** [`Tab`](Tab.md)
+
+### assertInvoked()
+
+```php
+public function assertInvoked(string $function, mixed ...$args): \Io\Live\Testing\Tab
+```
+
+That a component called $function through Js, with these arguments.
+
+**Parameters**
+
+- `$function` `string`
+- `...$args` `mixed`
+
+**Returns** [`Tab`](Tab.md)
+
 ### advance()
 
 ```php
@@ -101,6 +132,20 @@ Lets $seconds pass: the #[Every] timers that are due run, in order.
 **Parameters**
 
 - `$seconds` `float`
+
+**Returns** [`Tab`](Tab.md)
+
+### assertQuery()
+
+```php
+public function assertQuery(array $query): \Io\Live\Testing\Tab
+```
+
+That the browser's address shows these #[Input(query: ...)] values, by query key; null for one it leaves out
+
+**Parameters**
+
+- `$query` `array<string, mixed>`
 
 **Returns** [`Tab`](Tab.md)
 

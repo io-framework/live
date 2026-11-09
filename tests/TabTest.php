@@ -6,7 +6,7 @@ use PHPUnit\Framework\TestCase;
 use Io\App;
 use Io\Live\LivePlugin;
 use Io\Live\Testing\Tab;
-use Io\Live\Tests\Fixtures\{Basket, BasketBadge, Board, Counter, Badged, Greeter, Item, Searcher, ItemList, Door, Shop, ShoutPlugin, Uploader};
+use Io\Live\Tests\Fixtures\{Bridge, Basket, BasketBadge, Board, Counter, Badged, Greeter, Item, Searcher, ItemList, Door, Shop, ShoutPlugin, Uploader};
 
 final class TabTest extends TestCase
 {
@@ -16,7 +16,7 @@ final class TabTest extends TestCase
     {
         App::reset();
         $this->app = App::create();
-        $this->app->plugin(new LivePlugin([Counter::class, ItemList::class, Item::class, Shop::class, Uploader::class, Door::class, BasketBadge::class, Board::class, Greeter::class, Badged::class, Searcher::class]));
+        $this->app->plugin(new LivePlugin([Counter::class, ItemList::class, Item::class, Shop::class, Uploader::class, Door::class, BasketBadge::class, Board::class, Greeter::class, Badged::class, Searcher::class, Bridge::class]));
         $this->app->plugin(new ShoutPlugin());
         $this->app->configure(fn (\Io\Options\RendererOptions $views) => $views->directory = __DIR__ . '/Fixtures/views');
         $this->app->attach([]);
@@ -31,6 +31,24 @@ final class TabTest extends TestCase
     {
         $spec = (new \Io\OpenAPI\OpenAPIGenerator($this->app->getRouter()))->generate();
         $this->assertArrayNotHasKey('/_live', $spec['paths'] ?? []);
+    }
+
+    public function testATabAnswersForTheBrowsersJavaScriptAndCallsMarkedMethods(): void
+    {
+        $tab = Tab::for($this->app)->answer('localStorage.getItem', 'dark');
+        $bridge = $tab->mount('test-bridge');
+
+        $bridge->click('read')->assertSee('dark');
+        $tab->assertInvoked('localStorage.getItem', 'theme');
+
+        $tab->answer('localStorage.getItem', static fn (string $key) => throw new \RuntimeException("no $key"));
+        $bridge->click('read')->assertSee('localStorage.getItem(): no theme');
+
+        $bridge->click('draw');
+        $tab->assertInvoked('chart.draw', 1, 2);
+
+        $this->assertSame('640px', $bridge->invoke('resize', 640));
+        $bridge->assertSee('640px');
     }
 
     public function testClicksGoThroughTheTemplateAndTimersRunOnFakeTime(): void
