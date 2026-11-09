@@ -65,7 +65,13 @@ final class Broadcast
             $circuits[] = $circuit;
         }
         foreach ($circuits as $circuit) {
-            $circuit->changed(cause: 'a broadcast', topics: $topics);
+            $render = static fn () => $circuit->changed(cause: 'a broadcast', topics: $topics);
+            // Each tab in a task of its own: a client that stopped reading holds up only itself. Outside Tenma in turn
+            if (class_exists(\Threading\Task::class, false)) {
+                \Threading\Task::detach($render);
+            } else {
+                $render();
+            }
         }
     }
 

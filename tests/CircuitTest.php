@@ -1000,6 +1000,29 @@ final class CircuitTest extends TestCase
     }
 
     #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
+    public function testAClientThatStoppedReadingHoldsUpNoOtherTab(): void
+    {
+        self::fakeTenma();
+        $live = $this->plugin();
+        $mount = $this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-slow', 'p' => []]);
+        $stalled = false;
+        $slow = new Circuit($live, static function () use (&$stalled): void {
+            if ($stalled) {
+                \Fiber::suspend();
+            }
+        }, static fn () => null, static fn (): Closure => static fn () => null);
+        $slow->handle($mount);
+        $other = $this->circuit(live: $live);
+        $other->handle($mount);
+        $this->sent = [];
+        $stalled = true;
+
+        $live->scope()->get(\Io\Live\Broadcast::class)->changedHere();
+
+        $this->assertCount(1, $this->sent);
+    }
+
+    #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
     public function testAPageRenderSubscribesToNothing(): void
     {
         self::fakeTenma();

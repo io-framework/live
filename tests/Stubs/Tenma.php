@@ -63,7 +63,7 @@ namespace Threading {
         public static function detach(callable $work): void
         {
             [$request, \FakeTenma::$request] = [\FakeTenma::$request, null];
-            $work();
+            new \Fiber($work)->start();
             \FakeTenma::$request = $request;
         }
     }
