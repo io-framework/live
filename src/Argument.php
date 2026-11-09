@@ -15,11 +15,13 @@ final class Argument
     /** @return array{bool, mixed} Whether the value fits, and the value the parameter gets */
     public static function convert(ReflectionParameter $parameter, mixed $value): array
     {
-        [$fits, $converted] = Hydrator::fitting($parameter->getType(), $value);
-        // An empty field for a nullable parameter that takes no empty string: nothing chosen
-        if (!$fits && $value === '' && $parameter->allowsNull()) {
+        $type = $parameter->getType();
+        // An empty field for a nullable parameter that takes no empty string: nothing chosen, also for a ?bool,
+        // which would otherwise read it as false
+        if ($value === '' && $type !== null && $type->allowsNull() && preg_match('/\b(string|mixed)\b/', (string) $type) !== 1) {
             return [true, null];
         }
+        [$fits, $converted] = Hydrator::fitting($type, $value);
         return [$fits, $converted];
     }
 }
