@@ -110,6 +110,14 @@ final class DirectivesTest extends TestCase
         $this->assertStringContainsString("\$__action('go', [\$y])", $php);
     }
 
+    public function testAChildTagInACommentStaysAComment(): void
+    {
+        $php = Template::compile("<!-- <app-row name=\"{{ \$a }}\"></app-row> -->\n<app-row name=\"b\"></app-row>\n<!-- <?= 1 ?> <app-row/>\n--><app-row/>", ['app-row']);
+        $this->assertSame(2, substr_count($php, '$__child('));
+        $this->assertStringContainsString('<!-- <app-row name=', $php);
+        $this->assertStringContainsString('<app-row/>' . "\n-->", $php);
+    }
+
     public function testBlocksMustCloseInOrder(): void
     {
         $this->assertSame(['1: @foreach has no @endforeach'], self::problems("@foreach (\$a as \$b)\n"));

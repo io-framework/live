@@ -312,20 +312,67 @@ final class Template
         if ($selectors === []) {
             return $source;
         }
-        $value = '"(' . self::VALUE . ')"';
         $tag = '/<(' . implode('|', array_map(static fn (string $s) => preg_quote($s, '/'), $selectors)) . ')((?:\s+[A-Za-z_][\w.:-]*(?:="' . self::VALUE . '")?)*)\s*(?:\/>|>\s*<\/\1>)(\r\n|\n|\r|)/s';
-        return (string) preg_replace_callback($tag, static function (array $m) use ($value): string {
-            preg_match_all('/([A-Za-z_][\w.:-]*)(?:=' . $value . ')?/s', $m[2], $attributes, PREG_SET_ORDER);
-            $inputs = [];
-            foreach ($attributes as $attribute) {
-                $inputs[] = var_export($attribute[1], true) . ' => ' . self::value($attribute[2] ?? null);
+        // A tag that was commented out creates no child, and evaluates none of its inputs
+        $compiled = '';
+        $at = 0;
+        foreach ([...self::comments($source), [strlen($source), strlen($source)]] as [$from, $to]) {
+            $compiled .= preg_replace_callback($tag, self::child(...), substr($source, $at, $from - $at)) . substr($source, $from, $to - $from);
+            $at = $to;
+        }
+        return $compiled;
+    }
+
+    /**
+     * A child's tag as the PHP that renders it.
+     *
+     * @param array<array-key, string> $m The tag, its selector, its attributes and the line end after it
+     */
+    private static function child(array $m): string
+    {
+        $value = '"(' . self::VALUE . ')"';
+        preg_match_all('/([A-Za-z_][\w.:-]*)(?:=' . $value . ')?/s', $m[2], $attributes, PREG_SET_ORDER);
+        $inputs = [];
+        foreach ($attributes as $attribute) {
+            $inputs[] = var_export($attribute[1], true) . ' => ' . self::value($attribute[2] ?? null);
+        }
+        $code = '<?php echo $__child(' . var_export($m[1], true) . ', [' . implode(', ', $inputs) . '])' . ($m[3] !== '' ? ', ' . json_encode($m[3]) : '') . ';';
+        // A tag over several lines keeps them, as blank lines in the PHP: the lines after it stay where they are
+        $code .= str_repeat("\n", max(0, substr_count($m[0], "\n") - substr_count($m[3], "\n") - substr_count($code, "\n")));
+        // PHP swallows a newline after a closing tag: echo it instead, so the output and the line numbers stay put
+        return $code . ' ?>' . $m[3];
+    }
+
+    /**
+     * The HTML comments of a template's PHP, by byte offsets, end excluded. PHP code cannot open or close one, a
+     * comment may span PHP tags; one that is never closed runs to the end.
+     *
+     * @return list<array{int, int}>
+     */
+    private static function comments(string $source): array
+    {
+        $comments = [];
+        $start = null;
+        $at = 0;
+        foreach (token_get_all($source) as $token) {
+            $text = is_array($token) ? $token[1] : $token;
+            if (is_array($token) && $token[0] === T_INLINE_HTML) {
+                preg_match_all('/<!--|-->/', $text, $marks, PREG_OFFSET_CAPTURE);
+                foreach ($marks[0] as [$mark, $offset]) {
+                    if ($start === null && $mark === '<!--') {
+                        $start = $at + $offset;
+                    } elseif ($start !== null && $mark === '-->') {
+                        $comments[] = [$start, $at + $offset + 3];
+                        $start = null;
+                    }
+                }
             }
-            $code = '<?php echo $__child(' . var_export($m[1], true) . ', [' . implode(', ', $inputs) . '])' . ($m[3] !== '' ? ', ' . json_encode($m[3]) : '') . ';';
-            // A tag over several lines keeps them, as blank lines in the PHP: the lines after it stay where they are
-            $code .= str_repeat("\n", max(0, substr_count($m[0], "\n") - substr_count($m[3], "\n") - substr_count($code, "\n")));
-            // PHP swallows a newline after a closing tag: echo it instead, so the output and the line numbers stay put
-            return $code . ' ?>' . $m[3];
-        }, $source);
+            $at += strlen($text);
+        }
+        if ($start !== null) {
+            $comments[] = [$start, strlen($source)];
+        }
+        return $comments;
     }
 
     /**

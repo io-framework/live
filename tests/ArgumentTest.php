@@ -24,7 +24,7 @@ final class ArgumentTest extends TestCase
         $this->assertSame([true, ''], self::convert(static fn ($v) => $v, ''));
     }
 
-    public function testAnEmptyValueStaysFalseForAPlainBoolAndAOtherValueConverts(): void
+    public function testAnEmptyValueStaysFalseForAPlainBoolAndAnotherValueConverts(): void
     {
         $this->assertSame([true, false], self::convert(static fn (bool $v) => $v, ''));
         $this->assertSame([true, true], self::convert(static fn (?bool $v) => $v, 'on'));
