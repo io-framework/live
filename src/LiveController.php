@@ -64,11 +64,26 @@ final class LiveController
             };
             $circuit = null;
             $token = '';
-            $close = static fn () => $socket->close();
+            /** @var \Threading\Task|null $working The task that runs the actions, while there are any */
+            $working = null;
+            // After the action that ended the sign-in: what it sent last (a navigate to the login) still arrives
+            $close = static function () use ($socket, &$working): void {
+                if ($working !== null && !$working->isDone()) {
+                    $actions = $working;
+                    \Threading\Task::run(static function () use ($actions, $socket): void {
+                        try {
+                            $actions->await();
+                        } finally {
+                            $socket->close();
+                        }
+                    });
+                    return;
+                }
+                $socket->close();
+            };
             // Actions run one after the other, in a task: one that waits for the browser's JavaScript must not
             // keep the answer from being read
             $inbox = [];
-            $working = null;
             // A sign-out elsewhere closes it at once, not only once its principal's exp has passed
             Connections::opened($req->principal, spl_object_id($socket), $close);
             try {
