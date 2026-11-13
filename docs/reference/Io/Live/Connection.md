@@ -1,6 +1,6 @@
 ---
 title: "Connection"
-description: "The browser connection of a circuit, for a component or a #[Scoped] service that injects it: the request the WebSocket came in with (its cookies, and $request->jwt as the app's middlewares left it), and a way to send the browser to another page."
+description: "The browser connection of a circuit, for a component or a #[Scoped] service that injects it: the request the WebSocket came in with (its cookies, and $request->principal as the app's middlewares left it), and a way to send the browser to another page."
 order: 100
 generated: true
 ---
@@ -12,10 +12,22 @@ final class Connection
 ```
 
 The browser connection of a circuit, for a component or a #[Scoped] service that injects it: the request the
-WebSocket came in with (its cookies, and $request->jwt as the app's middlewares left it), and a way to send
-the browser to another page. After a reconnect, $request is the new connection's.
+WebSocket came in with (its cookies, and $request->principal as the app's middlewares left it), and a way to send
+the browser to another page. After a reconnect, $request is the new connection's. $page is the page the
+component is on, for a link back to it.
 
 ## Properties
+
+### $page
+
+```php
+public private(set) string $page = '/';
+```
+
+The page's path and query as the browser's address shows it ("/films?tag[]=action"), for "sign in and come
+back" links: `'/login?next=' . rawurlencode($this->connection->page)`. During the page's first render it is
+the page request's; once connected the browser reports it, and again whenever #[Input(query: ...)]
+properties change the address. Always a path on this site; "/" until the browser said where it is.
 
 ### $request
 
@@ -25,7 +37,7 @@ public private(set) \Io\Http\Request $request;
 
 **Type** `Request`
 
-The request the WebSocket came in with
+The request the WebSocket came in with, or the page's during its first render
 
 ## Methods
 

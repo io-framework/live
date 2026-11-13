@@ -140,7 +140,9 @@ final class StampCardPlugin extends PluginBase
 }
 ```
 
-`boot()` takes what it needs as parameters; Io passes them from the container. Components are added at boot: once a page has rendered a component, `add()` throws.
+`boot()` takes what it needs as parameters; Io passes them from the container. Components are added at boot. One
+added later, such as a component an app generates while it runs, is compiled at once (a template that does not
+compile is refused then); the templates compiled before keep its tag as text, so a view or the app's code places it.
 
 A plugin's components name their selector with a prefix of their own (`selector: 'stamps-card'`), so that they never meet an app's `app-` ones.
 

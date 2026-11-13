@@ -888,8 +888,29 @@ final class CircuitTest extends TestCase
         $container->get(Components::class)->add(ItemList::class, Item::class);
 
         $this->assertStringContainsString('<test-item data-live data-live-id=".0">', Circuit::page($live, 'test-list', []));
-        $this->expectException(\LogicException::class);
-        $container->get(Components::class)->add(Fragile::class);
+    }
+
+    public function testAComponentAddedAfterTheFirstPageRendersAndTakesItsClicks(): void
+    {
+        $live = new LivePlugin([ItemList::class, Item::class]);
+        $container = new Container();
+        $container->set(new Label('fine'));
+        $live->boot($container, self::environment(), new Logger(), new LiveOptions());
+        Circuit::page($live, 'test-list', []);
+
+        // What an app does with a component it generated while running
+        $container->get(Components::class)->add(Counter::class);
+
+        $this->assertStringContainsString('<output>0</output>', Circuit::page($live, 'test-counter', []));
+        $circuit = $this->circuit(live: $live);
+        $circuit->handle($this->message(['t' => 'mount', 'id' => 'c0', 'c' => 'test-counter', 'p' => []]));
+        $this->sent = [];
+        $circuit->handle($this->message(['t' => 'call', 'id' => 'c0', 'm' => 'add', 'a' => [1]]));
+        $this->assertStringContainsString('<output>1</output>', json_encode($this->sent, JSON_UNESCAPED_SLASHES) ?: '');
+
+        // A taken selector stays refused
+        $this->expectException(\InvalidArgumentException::class);
+        $container->get(Components::class)->add(Counter::class);
     }
 
     public function testACircuitResumesOnlyForTheUserItWasOpenedFor(): void

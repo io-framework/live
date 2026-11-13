@@ -5,7 +5,6 @@ namespace Io\Live;
 use Closure;
 use FilesystemIterator;
 use InvalidArgumentException;
-use LogicException;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
@@ -16,7 +15,8 @@ use Throwable;
  * The app's live components: those given to LivePlugin, and those another plugin adds in its boot(), which takes
  * this service as a parameter: `boot(Components $components)`, then `$components->add(StampCard::class)`. Only
  * these can be created; the browser names them by selector. The templates are compiled on first use, once every
- * selector is known.
+ * selector is known. A component added later (one an app generates while it runs) is compiled at once; the
+ * templates compiled before keep its tag as text, so a view or the app's code places it.
  */
 final class Components
 {
@@ -30,18 +30,16 @@ final class Components
     private array $hashes = [];
 
     /**
-     * Adds components, at boot: a class without #[Component], a selector that is taken or no custom element name,
-     * or a missing template is refused at once.
+     * Adds components: a class without #[Component], a selector that is taken or no custom element name, or a
+     * missing template is refused at once. After the first page, each one's template is compiled right away and a
+     * template that does not compile is refused too; the templates compiled before do not place its tag.
      *
      * @param class-string ...$classes Classes with a #[Component] attribute
-     * @throws \InvalidArgumentException for a class that cannot be a component
-     * @throws \LogicException once a page has used the components
+     * @throws \InvalidArgumentException for a class that cannot be a component, or after the first page a template
+     *         that does not compile
      */
     public function add(string ...$classes): self
     {
-        if ($this->compiled !== null) {
-            throw new LogicException('Components are added at boot, before the first page uses them');
-        }
         foreach ($classes as $class) {
             $reflection = new ReflectionClass($class);
             $attribute = ($reflection->getAttributes(Component::class)[0] ?? null)?->newInstance()
@@ -56,6 +54,12 @@ final class Components
             // Missing at boot, not on the first page that would show it
             if (!is_file($template)) {
                 throw new InvalidArgumentException("$class: template $template not found");
+            }
+            if ($this->compiled !== null) {
+                // Its own tag and every earlier one are known by now; nothing compiled before needs to change
+                $compiled = new Template($template, [...$this->selectors(), $selector], $class);
+                $this->compiled[$selector] = [$class, $compiled];
+                $this->hashes[$selector] = self::hash($class, $template);
             }
             $this->found[$selector] = [$class, $template];
         }
