@@ -37,6 +37,9 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
 
     private bool $dev = false;
 
+    /** In dev: whether the timer that reloads saved templates runs */
+    private bool $watching = false;
+
     private LiveOptions $options;
 
     private Logger $logger;
@@ -66,7 +69,8 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
 
     /**
      * Called by Io at attach(): registers the plugin, Components and Broadcast in the container. In development
-     * (Environment::isDev()) under Tenma it also reloads saved templates and checks every component.
+     * (Environment::isDev()) under Tenma it also reloads saved templates and checks every component, from the first
+     * request on: a script that boots the app without a server still ends.
      */
     public function boot(Container $container, Environment $environment, Logger $logger, LiveOptions $options): void
     {
@@ -78,31 +82,42 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
         $container->set($this);
         $container->set($this->components);
         $container->set($broadcast);
-        // In dev a saved template shows at once, in every open tab and with its state: --watch restarts the
-        // workers only for PHP that was included, and a template is read
-        if ($this->dev && class_exists(\Http\Server::class, false)) {
-            // ponytail: polls 4 times a second; a watcher from Tenma once a second user needs one
-            $checked = false;
-            \Threading\Timer::every(0.25, function () use ($broadcast, $logger, &$checked): void {
-                $saved = false;
-                $changed = $this->components->reload(function (string $file, ?Throwable $e) use ($broadcast, $logger, &$saved): void {
-                    $saved = true;
-                    if ($e !== null) {
-                        $logger->error('live: ' . $e->getMessage(), ['exception' => $e]);
-                    }
-                    // The editor gets it from check() below
-                    $broadcast->problem($file, $e);
-                });
-                if ($changed) {
-                    $broadcast->changedHere();
-                }
-                // Once the plugins have added theirs, and after every saved template
-                if (!$checked || $saved) {
-                    $checked = true;
-                    $this->check($logger);
-                }
-            });
+    }
+
+    /**
+     * In dev a saved template shows at once, in every open tab and with its state: --watch restarts the workers
+     * only for PHP that was included, and a template is read. Started by the first request, not at boot: the timer
+     * keeps a script alive, and one without a server would never end.
+     */
+    private function watch(): void
+    {
+        if (!$this->dev || $this->watching || !class_exists(\Http\Server::class, false)) {
+            return;
         }
+        $this->watching = true;
+        $broadcast = $this->container->get(Broadcast::class);
+        $logger = $this->logger;
+        // ponytail: polls 4 times a second; a watcher from Tenma once a second user needs one
+        $checked = false;
+        \Threading\Timer::every(0.25, function () use ($broadcast, $logger, &$checked): void {
+            $saved = false;
+            $changed = $this->components->reload(function (string $file, ?Throwable $e) use ($broadcast, $logger, &$saved): void {
+                $saved = true;
+                if ($e !== null) {
+                    $logger->error('live: ' . $e->getMessage(), ['exception' => $e]);
+                }
+                // The editor gets it from check() below
+                $broadcast->problem($file, $e);
+            });
+            if ($changed) {
+                $broadcast->changedHere();
+            }
+            // Once the plugins have added theirs, and after every saved template
+            if (!$checked || $saved) {
+                $checked = true;
+                $this->check($logger);
+            }
+        });
     }
 
     /** @internal Whether the app runs in development: then the browser gets details meant for its developer. */
@@ -398,6 +413,7 @@ final class LivePlugin extends PluginBase implements ViewHelper, ClientAsset, Re
      */
     public function after(array $plan, Request $req, Response $res): void
     {
+        $this->watch();
         if (!str_starts_with((string) $res->getHeader('Content-Type'), 'text/html') || $this->components->selectors() === []) {
             return;
         }
